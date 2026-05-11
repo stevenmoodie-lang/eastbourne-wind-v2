@@ -25,7 +25,7 @@ STATIONS = {
 
 def get_color(knots):
     if knots < 5: return "lightblue"
-    if knots <= 10: return "royalblue"  # Darker than skyblue, punchier than basic blue
+    if knots <= 10: return "dodgerblue"  # Lighter than RoyalBlue, punchier than SkyBlue
     if knots <= 15: return "green"
     if knots <= 19: return "yellow"
     if knots <= 28: return "red"
@@ -103,18 +103,22 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
+    # Heatstrip row
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
                                 marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
+    # Line graph row
     for i in range(len(df)-1):
         fig_bot.add_trace(go.Scatter(x=[df['time'][i], df['time'][i+1]], y=[df['wind'][i], df['wind'][i+1]], 
                                      mode='lines', line=dict(color=get_color(df['wind'][i]), width=2.5), 
                                      showlegend=False, hoverinfo='none'), row=2, col=1)
 
+    # Day Annotations, Night Shading, and Moons
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
+        
         fig_bot.add_annotation(
             x=midday, y=1.02, yref="y1", 
             text=f"<b>{midday.strftime('%a %d')}</b>",
@@ -136,7 +140,7 @@ if data and 'hourly' in data:
         height=280, margin=dict(t=15, b=0, l=5, r=5), 
         template="plotly_white", hovermode="x unified",
         xaxis2=dict(showticklabels=False), 
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False), # Range tightened
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False),
         yaxis2=dict(title=None, showticklabels=False, fixedrange=True, showgrid=True), 
         bargap=0
     )
