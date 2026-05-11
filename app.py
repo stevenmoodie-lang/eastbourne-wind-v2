@@ -53,31 +53,18 @@ def get_weather_data():
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
     r = requests.get(url, params=params).json()
-    
-    df = pd.DataFrame({
-        "time": pd.to_datetime(r["hourly"]["time"]), 
-        "speed": r["hourly"]["wind_speed_10m"], 
-        "dir": r["hourly"]["wind_direction_10m"]
-    })
-    
-    sun = pd.DataFrame({
-        "date": pd.to_datetime(r["daily"]["time"]).date, 
-        "sunrise": pd.to_datetime(r["daily"]["sunrise"]), 
-        "sunset": pd.to_datetime(r["daily"]["sunset"])
-    })
-    
+    df = pd.DataFrame({"time": pd.to_datetime(r["hourly"]["time"]), "speed": r["hourly"]["wind_speed_10m"], "dir": r["hourly"]["wind_direction_10m"]})
+    sun = pd.DataFrame({"date": pd.to_datetime(r["daily"]["time"]).date, "sunrise": pd.to_datetime(r["daily"]["sunrise"]), "sunset": pd.to_datetime(r["daily"]["sunset"])})
     t_range = pd.date_range(start=df['time'].min(), end=df['time'].max(), freq='15min')
     df_tide = pd.DataFrame({"time": t_range, "height": [calculate_wellington_tide(t) for t in t_range]})
     return df, sun, df_tide
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    # Ensure "Now" is in NZST local
     now = datetime.datetime.now()
     max_wind = df_hourly['speed'].max()
     crop_start, crop_end = df_sun['sunrise'].min(), df_sun['sunset'].max()
 
-    # Helper function to check if a specific time is "Daylight" across the whole week
     def is_daylight(t):
         for _, s in df_sun.iterrows():
             if s['sunrise'] <= t <= s['sunset']: return True
@@ -130,19 +117,23 @@ try:
         fig_main.add_annotation(x=day['sunrise'], y=-2, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.25)"), row=1, col=1)
         fig_main.add_annotation(x=day['sunset'], y=-2, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.25)"), row=1, col=1)
 
-        # Wind peak/lull labels
+        # Wind peak/lull labels + Arrows
         d_data = df_hourly[(df_hourly['time'] >= day['sunrise']) & (df_hourly['time'] <= day['sunset'])]
         if not d_data.empty:
             for f, off in [(d_data.loc[d_data['speed'].idxmax()], 3.5), (d_data.loc[d_data['speed'].idxmin()], -3.5)]:
+                # Restored Arrow heads
+                fig_main.add_annotation(x=f['time'], y=f['speed'] + (off/2.5), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    # Tide Peak Labels
+    # Tide Peak Labels (Dimmed)
     for i in range(1, len(df_tide)-1):
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
             t = df_tide.iloc[i]
             night_mode = not is_daylight(t['time'])
-            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color=f"rgba(255,255,255,{0.1 if night_mode else 1.0})"), yshift=7 if c > p else -7, row=2, col=1)
+            # Reduced opacity for better balance
+            label_alpha = 0.05 if night_mode else 0.4 
+            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color=f"rgba(255,255,255,{label_alpha})"), yshift=7 if c > p else -7, row=2, col=1)
 
     # Night Shading
     for i in range(len(df_sun)-1):
