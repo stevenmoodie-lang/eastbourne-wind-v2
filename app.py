@@ -93,9 +93,20 @@ if data and 'hourly' in data:
         group = day_df[day_df['date_only'] == d_date]
         center_idx = group.index[len(group)//2]
         avg_knots = round(group['wind'].mean())
+        
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
+        
+        # Day Header
         fig_top.add_annotation(x=center_idx, y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
-        fig_top.add_annotation(x=center_idx, y=0.5, text=f"<b>{avg_knots} kn</b>", showarrow=False, font=dict(size=13), color="white", xanchor="center")
+        
+        # FIXED: Avg Knots inside box (Color moved inside font dict)
+        fig_top.add_annotation(
+            x=center_idx, y=0.5, 
+            text=f"<b>{avg_knots} kn</b>", 
+            showarrow=False, 
+            font=dict(size=13, color="white"), 
+            xanchor="center"
+        )
         
         last_idx = group.index[-1]
         if last_idx < len(day_df) - 1:
@@ -124,19 +135,16 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # PEAKS AND VALLEYS LOGIC
-    # Only label daylight points to keep it clean
+    # PEAKS AND VALLEYS 
     for i in range(1, len(df)-1):
         if not df.iloc[i]['is_night']:
             prev_w = df.iloc[i-1]['wind']
             curr_w = df.iloc[i]['wind']
             next_w = df.iloc[i+1]['wind']
             
-            # Local Maxima (Mountain)
             if curr_w > prev_w and curr_w >= next_w:
                 fig_bot.add_annotation(x=df.iloc[i]['time'], y=curr_w, text=str(round(curr_w)), 
                                        showarrow=False, yshift=10, font=dict(size=9, color="black"), row=2, col=1)
-            # Local Minima (Valley)
             elif curr_w < prev_w and curr_w <= next_w:
                 fig_bot.add_annotation(x=df.iloc[i]['time'], y=curr_w, text=str(round(curr_w)), 
                                        showarrow=False, yshift=-10, font=dict(size=9, color="gray"), row=2, col=1)
