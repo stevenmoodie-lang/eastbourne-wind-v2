@@ -24,12 +24,12 @@ STATIONS = {
 }
 
 def get_color(knots, opacity=1.0):
-    # Lighter Amber (rgb 255, 191, 0) - stands out but isn't "muddy"
+    # Lighter Amber (rgb 255, 191, 0)
     colors = {
         "lightblue": f"rgba(173, 216, 230, {opacity})",
         "dodgerblue": f"rgba(30, 144, 255, {opacity})",
         "green": f"rgba(0, 128, 0, {opacity})",
-        "amber": f"rgba(255, 191, 0, {opacity})", 
+        "amber": f"rgba(255, 200, 50, {opacity})", 
         "red": f"rgba(255, 0, 0, {opacity})",
         "darkred": f"rgba(139, 0, 0, {opacity})"
     }
@@ -76,51 +76,46 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- 1. TOP GRAPH: DAYLIGHT FOCUS (Rounded Bar Heatstrip) ---
+    # --- 1. TOP GRAPH: DAYLIGHT FOCUS ---
     day_df = df[~df['is_night']].copy().reset_index(drop=True)
-    day_df['time_str'] = day_df['time'].dt.strftime('%Y-%m-%d %H:%M') 
-
     fig_top = go.Figure()
-    
-    # Use Bar chart for cornerradius support
-    fig_top.add_trace(go.Bar(
-        x=day_df['time_str'],
-        y=[1] * len(day_df),
-        marker=dict(
-            color=[get_color(w) for w in day_df['wind']],
-            line=dict(color='white', width=2),
-            cornerradius=10 # Rounded corners for the boxes
-        ),
-        showlegend=False,
-        hoverinfo='none'
-    ))
 
     for d_date in day_df['date_only'].unique():
         group = day_df[day_df['date_only'] == d_date]
-        center_idx = group.index[len(group)//2]
+        
+        # 1. Add ONE background bar for the whole day to get rounded corners
+        fig_top.add_trace(go.Bar(
+            x=[group['time'].mean()], 
+            y=[1],
+            width=[(group['time'].max() - group['time'].min()).total_seconds() * 1000 + 3600000],
+            marker=dict(color='rgba(0,0,0,0)', cornerradius=15, line=dict(width=0)),
+            showlegend=False, hoverinfo='none'
+        ))
+
+        # 2. Add the hourly color segments (no individual rounding)
+        fig_top.add_trace(go.Bar(
+            x=group['time'],
+            y=[1] * len(group),
+            marker=dict(
+                color=[get_color(w) for w in group['wind']],
+                line=dict(width=0)
+            ),
+            showlegend=False,
+            hoverinfo='none'
+        ))
+
+        # 3. Add Labels
         avg_knots = round(group['wind'].mean())
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
+        center_time = group['time'].iloc[len(group)//2]
         
-        # Day Label
-        fig_top.add_annotation(x=day_df['time_str'].iloc[center_idx], y=1.25, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11))
-        
-        # Rounded Average Value inside the strip
-        fig_top.add_annotation(
-            x=day_df['time_str'].iloc[center_idx], y=0.5, 
-            text=f"<b>{avg_knots} kn</b>", 
-            showarrow=False, 
-            font=dict(size=13, color="white")
-        )
-        
-        # Visual day break
-        last_idx = group.index[-1]
-        if last_idx < len(day_df) - 1:
-            fig_top.add_vline(x=day_df['time_str'].iloc[last_idx], line_width=10, line_color="white")
+        fig_top.add_annotation(x=center_time, y=1.25, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11))
+        fig_top.add_annotation(x=center_time, y=0.5, text=f"<b>{avg_knots} kn</b>", showarrow=False, font=dict(size=13, color="white"))
 
     fig_top.update_layout(
         height=130, margin=dict(t=35, b=0, l=5, r=5), 
-        template="plotly_white", bargap=0,
-        xaxis=dict(showticklabels=False, showgrid=False),
+        template="plotly_white", barmode='overlay', bargap=0,
+        xaxis=dict(showticklabels=False, showgrid=False, type='date'),
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.5], showgrid=False)
     )
 
@@ -143,7 +138,7 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # REFINED PEAKS AND VALLEYS
+    # PEAKS AND VALLEYS
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
