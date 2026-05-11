@@ -51,22 +51,22 @@ if data and 'hourly' in data:
     if unit == "knots":
         df['wind'] *= 0.539957
 
+    # Process Sun Data
     daily = data['daily']
-    sun_times = pd.Series(pd.to_datetime(daily['time']))
-    
     sun_data = pd.DataFrame({
-        'date': sun_times.dt.date, 
+        'date': pd.to_datetime(daily['time']).dt.date, 
         'sunrise': pd.to_datetime(daily['sunrise']),
         'sunset': pd.to_datetime(daily['sunset'])
     })
 
-    # Prepare for Plotting
+    # Filter for Nighttime
     plot_df = df.copy()
-    
     if hide_night:
         plot_df['date_only'] = plot_df['time'].dt.date
         plot_df = plot_df.merge(sun_data, left_on='date_only', right_on='date')
         plot_df = plot_df[(plot_df['time'] >= plot_df['sunrise']) & (plot_df['time'] <= plot_df['sunset'])]
+    
+    plot_df = plot_df.reset_index(drop=True)
 
     # --- PLOTTING ---
     fig = go.Figure()
@@ -88,27 +88,31 @@ if data and 'hourly' in data:
                     fillcolor="gray", opacity=0.15, line_width=0
                 )
 
-    # 3. Add Day Separators (Hidden Night Mode) - FIXED TO PREVENT CRASH
-    else:
-        day_starts = plot_df.groupby('date_only')['time'].first().iloc[1:]
-        for start_time in day_starts:
-            # Draw the Line
-            fig.add_shape(
-                type="line", x0=start_time, x1=start_time, y0=0, y1=1,
-                xref="x", yref="paper",
-                line=dict(color="black", width=1.5, dash="solid")
-            )
-            # Draw the Annotation separately
-            fig.add_annotation(
-                x=start_time, y=0, yref="paper",
-                text=" NEW DAY", showarrow=False, xanchor="left", yanchor="bottom",
-                font=dict(color="black", size=10)
-            )
+    # 3. Add Day Separators (Works for both modes now)
+    # Detect where the date changes from one row to the next
+    plot_df['date_val'] = plot_df['time'].dt.date
+    date_switches = plot_df[plot_df['date_val'] != plot_df['date_val'].shift(1)].index.tolist()
+    
+    for idx in date_switches:
+        if idx == 0: continue # Skip the very beginning of the chart
+        
+        switch_time = plot_df.loc[idx, 'time']
+        
+        fig.add_shape(
+            type="line", x0=switch_time, x1=switch_time, y0=0, y1=1,
+            xref="x", yref="paper",
+            line=dict(color="black", width=2, dash="solid")
+        )
+        fig.add_annotation(
+            x=switch_time, y=0.02, yref="paper",
+            text=f" {switch_time.strftime('%a')}", showarrow=False, 
+            xanchor="left", font=dict(color="black", size=12, bold=True)
+        )
 
     # 4. Add Current Time Line ("NOW")
     if not plot_df.empty:
-        idx = (plot_df['time'] - now_nz).abs().idxmin()
-        closest_time = plot_df.loc[idx, 'time']
+        idx_now = (plot_df['time'] - now_nz).abs().idxmin()
+        closest_time = plot_df.loc[idx_now, 'time']
         
         fig.add_shape(
             type="line", x0=closest_time, x1=closest_time, y0=0, y1=1,
@@ -132,15 +136,14 @@ if data and 'hourly' in data:
         ),
         yaxis=dict(title=unit, rangemode="tozero"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(t=80)
+        margin=dict(t=80, b=40)
     )
 
     st.title(f"🌬️ {selection} Tracker")
     st.plotly_chart(fig, use_container_width=True)
 
     # Summary Metrics
-    curr_idx = (plot_df['time'] - now_nz).abs().idxmin()
-    current_val = plot_df.loc[curr_idx, 'wind']
+    current_val = plot_df.loc[idx_now, 'wind']
     st.metric("Forecasted Wind Now", f"{current_val:.1f} {unit}")
 
 else:
