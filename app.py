@@ -9,7 +9,6 @@ import pytz
 # --- PAGE CONFIG & CSS ---
 st.set_page_config(page_title="Wind Tracker", layout="wide")
 
-# CSS to fix the title and pull everything up
 st.markdown("""
     <style>
         .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
@@ -79,13 +78,12 @@ if data and 'hourly' in data:
     idx_now = (df['time'] - now_nz).abs().idxmin()
     fig1.add_vline(x=df.loc[idx_now, 'time'], line_width=1.5, line_dash="dot", line_color="green")
     
-    fig1.update_layout(height=280, margin=dict(t=25, b=0, l=5, r=5), template="plotly_white", hovermode="x unified",
+    fig1.update_layout(height=260, margin=dict(t=25, b=0, l=5, r=5), template="plotly_white", hovermode="x unified",
                       yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.7]),
                       yaxis2=dict(title="kn", fixedrange=True), bargap=0)
 
-    # --- GRAPH 2: DAYLIGHT ONLY HEATSTRIP ---
-    day_df = df[~df['is_night']].copy()
-    # Labels show "Mon 09" style to save space
+    # --- GRAPH 2: DAYLIGHT ONLY HEATSTRIP (WITH DIVIDERS) ---
+    day_df = df[~df['is_night']].copy().reset_index(drop=True)
     day_df['time_str'] = day_df['time'].dt.strftime('%a %H') 
 
     fig2 = go.Figure()
@@ -97,15 +95,31 @@ if data and 'hourly' in data:
         hovertemplate='%{x}:00<br>%{customdata:.1f} kn<extra></extra>'
     ))
 
+    # Add Dividers and Labels for each day transition
+    prev_date = None
+    for i, row in day_df.iterrows():
+        current_date = row['time'].date()
+        if prev_date is not None and current_date != prev_date:
+            # Draw a thick white divider line between days
+            fig2.add_vline(x=i - 0.5, line_width=3, line_color="white")
+            
+        # Optional: Add a text label above the start of each day block
+        if current_date != prev_date:
+            fig2.add_annotation(
+                x=i, y=1.1, text=f"<b>{row['time'].strftime('%a')}</b>",
+                showarrow=False, font=dict(size=10), xanchor="left"
+            )
+        prev_date = current_date
+
     fig2.update_layout(
-        height=130, margin=dict(t=25, b=25, l=5, r=5),
+        height=140, margin=dict(t=30, b=25, l=5, r=5),
         template="plotly_white", bargap=0,
-        xaxis=dict(type='category', tickangle=0, tickfont=dict(size=8), dtick=4 if days_to_fetch==7 else 2),
-        yaxis=dict(showticklabels=False, fixedrange=True, showgrid=False, zeroline=False),
+        xaxis=dict(type='category', tickangle=0, tickfont=dict(size=7), dtick=4),
+        yaxis=dict(showticklabels=False, fixedrange=True, showgrid=False, zeroline=False, range=[0, 1.3]),
         title=dict(text="<b>Daylight Focus</b>", font=dict(size=12), x=0.01)
     )
 
-    # Display Title & Graphs
+    # Display
     st.title(f"🌬️ {selection}: {df.loc[idx_now, 'wind']:.1f} kn")
     st.plotly_chart(fig1, use_container_width=True, config={'displayModeBar': False})
     st.plotly_chart(fig2, use_container_width=True, config={'displayModeBar': False})
