@@ -9,7 +9,7 @@ import numpy as np
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
-# --- CSS: MOBILE OPTIMIZATION (Fixed Title Clipping) ---
+# --- CSS: MOBILE OPTIMIZATION ---
 st.markdown("""
     <style>
         [data-testid="stHeader"], header { visibility: hidden; height: 0; }
@@ -36,12 +36,13 @@ st.markdown("""
 LAT, LON = -41.405, 174.867
 
 def get_color(knots, alpha=1.0):
-    if knots <= 6: return f"rgba(173, 216, 230, {alpha})"    
-    if knots <= 11: return f"rgba(135, 206, 250, {alpha})"   
-    if knots <= 15: return f"rgba(0, 128, 0, {alpha})"       
-    if knots <= 19: return f"rgba(255, 200, 50, {alpha})"    
-    if knots <= 28: return f"rgba(255, 0, 0, {alpha})"       
-    return f"rgba(139, 0, 0, {alpha})"                       
+    if knots <= 6: return f"rgba(173, 216, 230, {alpha})"    # Light Blue
+    if knots <= 11: return f"rgba(135, 206, 250, {alpha})"   # Sky Blue
+    # LIGHTER GREEN UPDATED BELOW (Lighter than 'forestgreen', more like 'lime/springgreen')
+    if knots <= 15: return f"rgba(50, 205, 50, {alpha})"     
+    if knots <= 19: return f"rgba(255, 200, 50, {alpha})"    # Yellow-Gold
+    if knots <= 28: return f"rgba(255, 0, 0, {alpha})"       # Red
+    return f"rgba(139, 0, 0, {alpha})"                       # Dark Red
 
 @st.cache_data(ttl=600)
 def get_weather_data():
