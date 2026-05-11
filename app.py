@@ -3,7 +3,8 @@ import requests
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+import datetime
+from datetime import timedelta
 import pytz
 import numpy as np
 
@@ -63,14 +64,14 @@ def get_weather_data(lat, lon, days):
     return r.json() if r.status_code == 200 else None
 
 @st.cache_data(ttl=3600)
-def get_tide_data(lat, lon, days):
-    # Using NIWA's public tide model endpoint (requires lat/lon)
-    # This simulates a typical API structure; for real-time we use a generic harmonic model if API is restricted
-    url = f"https://api.niwa.co.nz/tides/data?lat={lat}&long={lon}&numberOfDays={days}"
-    # Note: If no API key, we simulate the curve based on standard Wellington Harmonics
-    times = pd.date_range(start=datetime.now().replace(hour=0, minute=0), periods=days*24, freq='H')
-    # Simplified M2+S2 tidal constituent simulation for Wellington (~1.5m range)
-    tide_heights = [0.8 + 0.6 * np.sin((t.timestamp() / 44714) * 2 * np.pi) for t in times]
+def get_tide_data(days):
+    # Using 'h' instead of 'H' for newer pandas versions
+    start_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    times = pd.date_range(start=start_time, periods=days*24*4, freq='15min')
+    
+    # Simulate Wellington tide harmonics (semi-diurnal)
+    # Wellington tide range is approx 0.5m to 1.6m
+    tide_heights = [1.0 + 0.5 * np.sin((t.timestamp() / 22357) * np.pi) for t in times]
     return pd.DataFrame({'time': times, 'height': tide_heights})
 
 # --- DATA FETCHING ---
@@ -80,10 +81,10 @@ days_to_fetch = 7 if forecast_range == "7 Days" else 3
 
 coords = STATIONS[selection]
 data = get_weather_data(coords["lat"], coords["lon"], days_to_fetch)
-tide_df = get_tide_data(coords["lat"], coords["lon"], days_to_fetch)
+tide_df = get_tide_data(days_to_fetch)
 
 nz_tz = pytz.timezone('Pacific/Auckland')
-now_nz = datetime.now(nz_tz).replace(tzinfo=None)
+now_nz = datetime.datetime.now(nz_tz).replace(tzinfo=None)
 
 if data and 'hourly' in data:
     df = pd.DataFrame({
@@ -137,7 +138,6 @@ if data and 'hourly' in data:
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
     # --- 2. BOTTOM GRAPHS (Wind + Tide) ---
-    # Added a 3rd row for Tides
     fig_bot = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=True, 
@@ -145,7 +145,7 @@ if data and 'hourly' in data:
         row_heights=[0.1, 0.6, 0.3]
     )
     
-    # ROW 1: Segments (Heatstrip)
+    # Segments
     heat_blocks = []
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
@@ -168,13 +168,14 @@ if data and 'hourly' in data:
     for b in heat_blocks:
         block_color = "#2c3e50" if b['is_night'] else get_color(b['wind'])
         mid_point = b['time'] + (b['end'] - b['time']) / 2
+        width_ms = (b['end'] - b['time']).total_seconds() * 1000
         fig_bot.add_trace(go.Bar(
-            x=[mid_point], y=[1], width=(b['end'] - b['time']).total_seconds() * 1000, 
+            x=[mid_point], y=[1], width=width_ms, 
             marker_color=block_color, showlegend=False, hoverinfo='none'
         ), row=1, col=1)
-        fig_bot.add_annotation(x=mid_point, y=0.5, yref="y1", text="➤", textangle=b['dir']-90, showarrow=False, font=dict(size=14, color="white" if not b['is_night'] else "rgba(255,255,255,0.2)"), row=1, col=1)
+        fig_bot.add_annotation(x=mid_point, y=0.5, yref="y1", text="➤", textangle=b['dir']-90, showarrow=False, font=dict(size=14, color="white" if not b['is_night'] else "rgba(255,255,255,0.15)"), row=1, col=1)
 
-    # ROW 2: Wind Speed Line
+    # Wind Speed Line
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         op = 0.2 if (p1['is_night'] and p2['is_night']) else 1.0
@@ -184,33 +185,41 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # ROW 3: Tide Graph
+    # Tide Graph
     fig_bot.add_trace(go.Scatter(
         x=tide_df['time'], y=tide_df['height'],
         fill='tozeroy', mode='lines',
         line=dict(color='#5dade2', width=2),
         fillcolor='rgba(93, 173, 226, 0.2)',
-        name='Tide (m)', showlegend=False
+        showlegend=False, hoverinfo='none'
     ), row=3, col=1)
 
-    # Night Shading (All rows)
+    # Peak/Valley (Wind)
+    for d_date in df['date_only'].unique():
+        day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
+        if not day_block.empty:
+            peak = day_block.loc[day_block['wind'].idxmax()]
+            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
+            valley = day_block.loc[day_block['wind'].idxmin()]
+            fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
+
+    # Night Shading (Applied to all)
     for i in range(len(sun_data)-1):
-        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.3, line_width=0, row="all")
-    
-    # Customizing Axes
+        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.35, line_width=0, row="all")
+
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
     tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
 
     fig_bot.update_layout(
-        height=500, margin=dict(t=10, b=0, l=5, r=5), 
+        height=550, margin=dict(t=10, b=0, l=5, r=5), 
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False),
         yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.05)"),
-        yaxis3=dict(title="Tide (m)", title_font=dict(size=10), showgrid=False, range=[0, 2]),
+        yaxis3=dict(showticklabels=True, title=None, showgrid=False, range=[0, 2], tickfont=dict(size=9)),
         xaxis3=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(size=11, family="Arial Black"))
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
 
 else:
-    st.error("Error loading data")
+    st.error("Error loading weather data")
