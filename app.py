@@ -30,18 +30,13 @@ def get_weather_data(lat, lon):
         "hourly": "wind_speed_10m",
         "daily": "sunrise,sunset",
         "timezone": "Pacific/Auckland",
-        "wind_speed_unit": "kmh", # Using kmh for stability, converting later
+        "wind_speed_unit": "kmh",
         "forecast_days": 3
     }
     try:
         response = requests.get(url, params=params, timeout=10)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            st.warning(f"API Error: Status {response.status_code}")
-            return None
-    except Exception as e:
-        st.error(f"Connection Error: {e}")
+        return response.json() if response.status_code == 200 else None
+    except:
         return None
 
 # --- SIDEBAR ---
@@ -56,15 +51,12 @@ nz_tz = pytz.timezone('Pacific/Auckland')
 now_nz = datetime.now(nz_tz).replace(tzinfo=None)
 
 if data and 'hourly' in data:
-    # 1. Prepare Hourly Data
     df = pd.DataFrame({
         'time': pd.Series(pd.to_datetime(data['hourly']['time'])),
         'wind_kmh': data['hourly']['wind_speed_10m']
     })
-    # Convert km/h to knots
     df['wind'] = df['wind_kmh'] * 0.539957
 
-    # 2. Prepare Sun Data
     daily = data['daily']
     sun_data = pd.DataFrame({
         'date': pd.Series(pd.to_datetime(daily['time'])).dt.date, 
@@ -72,7 +64,6 @@ if data and 'hourly' in data:
         'sunset': pd.to_datetime(daily['sunset'])
     })
 
-    # 3. Filter Logic
     plot_df = df.copy()
     if hide_night:
         plot_df['date_only'] = plot_df['time'].dt.date
@@ -96,11 +87,11 @@ if data and 'hourly' in data:
             hoverinfo='none'
         ))
 
-    # Invisible layer for hover data
+    # Invisible layer for hover data (this still shows time in the hover box for precision)
     fig.add_trace(go.Scatter(
         x=plot_df['time'], y=plot_df['wind'],
         mode='markers', marker=dict(opacity=0),
-        name="Wind (Knots)", showlegend=True
+        name="Wind", showlegend=False
     ))
 
     # Night Shading
@@ -116,20 +107,33 @@ if data and 'hourly' in data:
     if not plot_df.empty:
         idx_now = (plot_df['time'] - now_nz).abs().idxmin()
         closest_time = plot_df.loc[idx_now, 'time']
-        fig.add_vline(x=closest_time, line_width=2, line_dash="dot", line_color="green")
-        fig.add_annotation(x=closest_time, y=1.05, yref="paper", text="NOW", font=dict(color="green"))
+        fig.add_shape(
+            type="line", x0=closest_time, x1=closest_time, y0=0, y1=1,
+            xref="x", yref="paper", line=dict(color="green", width=2, dash="dot")
+        )
 
     fig.update_layout(
         title=f"Wind Forecast: {selection}",
         template="plotly_white",
         hovermode="x unified",
-        xaxis=dict(type='category' if hide_night else 'date', title=""),
-        yaxis=dict(title="Knots", rangemode="tozero")
+        xaxis=dict(
+            type='category' if hide_night else 'date',
+            # Format: Mon 12 May
+            tickformat="%a %d %b", 
+            # This forces Plotly to only show one tick per day to avoid 
+            # showing the same day name multiple times
+            dtick=86400000.0 if not hide_night else None, 
+            title=""
+        ),
+        yaxis=dict(title="Knots", rangemode="tozero"),
+        margin=dict(t=50, b=40)
     )
 
     st.title(f"🌬️ {selection} Tracker")
     st.plotly_chart(fig, use_container_width=True)
+    
+    # Precise current reading
     st.metric("Current Forecasted Wind", f"{plot_df.loc[idx_now, 'wind']:.1f} Knots")
 
 else:
-    st.error("Could not load weather data. The API might be temporarily down or rate-limited.")
+    st.error("Could not load weather data.")
