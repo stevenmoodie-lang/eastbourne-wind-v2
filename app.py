@@ -64,6 +64,7 @@ if 'loc_id' not in st.session_state:
 final_loc = st.sidebar.text_input("Active Location ID", value=st.session_state.loc_id)
 
 # --- MAIN UI ---
+st.sidebar.caption("💡 Try IDs: 3987 (Baring), 3445 (Airport), 12396 (Hutt)")
 st.title("🌬️ NIWA Wind Tracker")
 st.info(f"Currently viewing Station ID: **{final_loc}**")
 
