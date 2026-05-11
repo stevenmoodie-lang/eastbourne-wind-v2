@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime, time
+from datetime import datetime, timedelta
 import pytz
 
 # --- PAGE CONFIG & CSS ---
@@ -82,18 +82,7 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- HEADER ---
-    idx_now = (df['time'] - now_nz).abs().idxmin()
-    col1, col2 = st.columns([6, 1]) 
-    with col1:
-        st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
-        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> — Currently <b>{get_direction_label(df.loc[idx_now, 'dir'])}</b></div>", unsafe_allow_html=True)
-    with col2:
-        if st.button("🔄 Refresh"):
-            st.cache_data.clear()
-            st.rerun()
-
-    # --- 1. TOP SUMMARY GRAPH ---
+    # --- 1. TOP SUMMARY ---
     day_df = df[~df['is_night']].copy()
     daily_summary = day_df.groupby('date_only').agg({'wind': 'mean', 'dir': lambda x: x.mode()[0]}).reset_index()
     
@@ -109,23 +98,34 @@ if data and 'hourly' in data:
         fig_top.add_annotation(x=str(row['date_only']), y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11))
         fig_top.add_annotation(x=str(row['date_only']), y=0.5, text=f"<b>{round(row['wind'])} kn</b>", showarrow=False, font=dict(size=13, color="white"))
 
-    fig_top.update_layout(height=110, margin=dict(t=35, b=0, l=5, r=5), template="plotly_white", bargap=0.05, xaxis=dict(showticklabels=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False))
+    fig_top.update_layout(height=110, margin=dict(t=35, b=0, l=5, r=5), template="plotly_white", bargap=0.05, xaxis=dict(showticklabels=False), yaxis=dict(showticklabels=False, range=[0, 1.4]))
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
     # --- 2. BOTTOM GRAPH ---
-    fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.15, 0.85])
+    fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.12, 0.88])
     
-    # ROW 1: Heatstrip
-    for i, row in daily_summary.iterrows():
-        midpoint = pd.to_datetime(row['date_only']) + pd.Timedelta(hours=12)
+    # ROW 1: 3-Hourly Heatstrip with Arrows
+    df_3h = df.resample('3h', on='time').agg({'wind': 'mean', 'dir': 'mean'}).reset_index()
+    
+    for _, row in df_3h.iterrows():
+        # Draw 3-hour colored bar
         fig_bot.add_trace(go.Bar(
-            x=[midpoint], y=[1], 
-            width=1000*3600*24, marker_color=get_color(row['wind']), showlegend=False, hoverinfo='none'
+            x=[row['time'] + timedelta(hours=1.5)], 
+            y=[1], 
+            width=1000*3600*3, # 3 hours in ms
+            marker_color=get_color(row['wind']),
+            showlegend=False, hoverinfo='none'
         ), row=1, col=1)
-        fig_bot.add_annotation(x=midpoint, y=0.5, yref="y1", 
-                               text=f"<b>{get_direction_label(row['dir'])}</b>", showarrow=False, font=dict(size=10, color="white"), row=1, col=1)
+        
+        # Add arrow inside the bar
+        fig_bot.add_annotation(
+            x=row['time'] + timedelta(hours=1.5), y=0.5, yref="y1",
+            text="➤", textangle=row['dir']-90,
+            showarrow=False, font=dict(size=14, color="white"),
+            row=1, col=1
+        )
 
-    # ROW 2: Wind Speed Line
+    # ROW 2: Wind Speed Line (Colored Segments)
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         opacity = 0.15 if (p1['is_night'] and p2['is_night']) else 1.0
@@ -135,37 +135,25 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Peak markers
+    # Night Shading & Peak markers
+    for i in range(len(sun_data)-1):
+        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="black", opacity=0.08, line_width=0, row="all")
+    
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
             fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10), row=2, col=1)
 
-    # Night Shading
-    for i in range(len(sun_data)-1):
-        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="black", opacity=0.08, line_width=0, row="all")
-
-    # --- CUSTOM X-AXIS LABLES ---
-    # Centering day names at 12:00 PM for each day
-    tick_vals = [pd.to_datetime(d) + pd.Timedelta(hours=12) for d in df['date_only'].unique()]
+    # X-Axis Day Labels centered at 12:00 PM
+    tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
     tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
 
     fig_bot.update_layout(
-        height=350, margin=dict(t=10, b=0, l=5, r=5), template="plotly_white",
+        height=380, margin=dict(t=10, b=0, l=5, r=5), template="plotly_white",
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False),
         yaxis2=dict(title=None, side="left", showgrid=True, tickfont=dict(size=9)),
-        xaxis2=dict(
-            tickmode='array',
-            tickvals=tick_vals,
-            ticktext=tick_text,
-            showgrid=True,
-            gridcolor="rgba(200,200,200,0.2)",
-            tickfont=dict(size=11, color="black", family="Arial Black")
-        )
+        xaxis2=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(200,200,200,0.2)", tickfont=dict(size=11, color="black", family="Arial Black"))
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
-
-else:
-    st.error("Error loading data")
