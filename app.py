@@ -94,11 +94,12 @@ try:
             continue
         fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False))
         heading = (s['dir'] + 180) % 360
-        fig_ribbon.add_annotation(x=s['x_id'], y=0.5, text="➤", showarrow=False, textangle=heading-90, font=dict(size=12, color="white"))
-        fig_ribbon.add_annotation(x=s['x_id'], y=-0.4, text=f"<b>{round(s['speed'])}</b>", showarrow=False, font=dict(size=10, color="white"))
+        # Shrinking arrowhead size to 9 and speed text to 8
+        fig_ribbon.add_annotation(x=s['x_id'], y=0.5, text="➤", showarrow=False, textangle=heading-90, font=dict(size=9, color="white"))
+        fig_ribbon.add_annotation(x=s['x_id'], y=-0.4, text=f"<b>{round(s['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"))
 
     fig_ribbon.update_layout(
-        height=100, margin=dict(l=5, r=5, t=25, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0,
+        height=90, margin=dict(l=5, r=5, t=25, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0,
         xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], 
                    ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], side="top", 
                    tickfont=dict(size=10, color="white"), fixedrange=True),
@@ -159,13 +160,11 @@ try:
 
     fig_main.update_layout(
         height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        # Enabled fixedrange=False on X for pinch-to-zoom
         xaxis=dict(visible=False, fixedrange=False),
         xaxis2=dict(visible=False, fixedrange=False),
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 10]),
         yaxis2=dict(showgrid=False, zeroline=False, fixedrange=True, showticklabels=False, range=[0, 2.2])
     )
-    # Added scrollZoom for easier mobile scaling
     st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
 
 except Exception as e:
