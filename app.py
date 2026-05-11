@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, time # Added time here
+from plotly.subplots import make_subplots
+from datetime import datetime, time
 import pytz
 
 # --- PAGE CONFIG ---
@@ -41,7 +42,6 @@ def get_weather_data(lat, lon):
 # --- SIDEBAR ---
 st.sidebar.title("⚙️ Settings")
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
-hide_night = st.sidebar.toggle("Hide Nighttime Hours", value=True)
 
 # --- DATA PROCESSING ---
 coords = STATIONS[selection]
@@ -63,20 +63,30 @@ if data and 'hourly' in data:
         'sunset': pd.to_datetime(daily['sunset'])
     })
 
-    plot_df = df.copy()
-    if hide_night:
-        plot_df['date_only'] = plot_df['time'].dt.date
-        plot_df = plot_df.merge(sun_data, left_on='date_only', right_on='date')
-        plot_df = plot_df[(plot_df['time'] >= plot_df['sunrise']) & (plot_df['time'] <= plot_df['sunset'])]
-    
-    plot_df = plot_df.reset_index(drop=True)
+    # --- PLOTTING WITH SUBPLOTS ---
+    # Row 1 is the thick color bar (15% height), Row 2 is the line graph (85% height)
+    fig = make_subplots(
+        rows=2, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.03,
+        row_heights=[0.15, 0.85]
+    )
 
-    # --- PLOTTING ---
-    fig = go.Figure()
+    # 1. ADD COLOR BAR (TOP)
+    for i in range(len(df)):
+        knots = df.loc[i, 'wind']
+        fig.add_trace(go.Bar(
+            x=[df.loc[i, 'time']],
+            y=[1], # Constant height to make it a solid block
+            marker_color=get_color(knots),
+            marker_line_width=0,
+            showlegend=False,
+            hoverinfo='none'
+        ), row=1, col=1)
 
-    # Draw Segments for Colors
-    for i in range(len(plot_df) - 1):
-        p1, p2 = plot_df.iloc[i], plot_df.iloc[i+1]
+    # 2. ADD LINE SEGMENTS (BOTTOM)
+    for i in range(len(df) - 1):
+        p1, p2 = df.iloc[i], df.iloc[i+1]
         fig.add_trace(go.Scatter(
             x=[p1['time'], p2['time']],
             y=[p1['wind'], p2['wind']],
@@ -84,59 +94,50 @@ if data and 'hourly' in data:
             line=dict(color=get_color(p1['wind']), width=4),
             showlegend=False,
             hoverinfo='none'
-        ))
+        ), row=2, col=1)
 
-    # Invisible trace for hover
+    # Invisible hover trace
     fig.add_trace(go.Scatter(
-        x=plot_df['time'], y=plot_df['wind'],
+        x=df['time'], y=df['wind'],
         mode='markers', marker=dict(opacity=0),
         name="Wind", showlegend=False
-    ))
+    ), row=2, col=1)
 
-    # Night Shading (Normal Mode)
-    if not hide_night:
-        for i in range(len(sun_data)):
-            if i < len(sun_data) - 1:
-                fig.add_vrect(
-                    x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1],
-                    fillcolor="gray", opacity=0.15, line_width=0
-                )
+    # Night Shading
+    for i in range(len(sun_data)):
+        if i < len(sun_data) - 1:
+            fig.add_vrect(
+                x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1],
+                fillcolor="gray", opacity=0.1, line_width=0
+            )
 
     # NOW line
-    idx_now = (plot_df['time'] - now_nz).abs().idxmin()
-    closest_time = plot_df.loc[idx_now, 'time']
-    fig.add_shape(
-        type="line", x0=closest_time, x1=closest_time, y0=0, y1=1,
-        xref="x", yref="paper", line=dict(color="green", width=2, dash="dot")
-    )
+    idx_now = (df['time'] - now_nz).abs().idxmin()
+    closest_time = df.loc[idx_now, 'time']
+    fig.add_vline(x=closest_time, line_width=2, line_dash="dot", line_color="green")
 
-    # --- X-AXIS DAYTIME LABEL LOGIC (FIXED) ---
-    if hide_night:
-        day_starts = plot_df.groupby(plot_df['time'].dt.date)['time'].first()
-        tickvals = day_starts.tolist()
-        ticktext = [t.strftime("%a %d %b") for t in day_starts]
-    else:
-        # FIX: Combine the date with a noon time object to create a valid datetime
-        tickvals = [datetime.combine(d, time(12, 0)) for d in sun_data['date']]
-        ticktext = [t.strftime("%a %d %b") for t in tickvals]
+    # X-Axis Day Labels (at Midday)
+    tickvals = [datetime.combine(d, time(12, 0)) for d in sun_data['date']]
+    ticktext = [t.strftime("%a %d %b") for t in tickvals]
 
     fig.update_layout(
-        title=f"Wind Forecast: {selection}",
+        height=500,
         template="plotly_white",
         hovermode="x unified",
-        xaxis=dict(
-            type='category' if hide_night else 'date',
+        xaxis2=dict(
             tickvals=tickvals,
             ticktext=ticktext,
             title=""
         ),
-        yaxis=dict(title="Knots", rangemode="tozero"),
-        margin=dict(t=50, b=40)
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1]), # Bar chart Y-axis
+        yaxis2=dict(title="Knots", rangemode="tozero"), # Line chart Y-axis
+        margin=dict(t=20, b=40, l=10, r=10),
+        bargap=0 # Makes the top bar look like one solid thick line
     )
 
     st.title(f"🌬️ {selection} Tracker")
     st.plotly_chart(fig, use_container_width=True)
-    st.metric("Current Forecasted Wind", f"{plot_df.loc[idx_now, 'wind']:.1f} Knots")
+    st.metric("Current Forecasted Wind", f"{df.loc[idx_now, 'wind']:.1f} Knots")
 
 else:
     st.error("Could not load weather data.")
