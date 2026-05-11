@@ -94,33 +94,33 @@ try:
     # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # NEW: TRACE-BASED NIGHT SHADING (Works across both subplots)
+    # BAR-BASED NIGHT SHADING (DARKER & REFINED)
     for i in range(len(df_sun) - 1):
         x0, x1 = df_sun.iloc[i]['sunset'], df_sun.iloc[i+1]['sunrise']
         for row_idx in [1, 2]:
-            fig_main.add_trace(go.Scatter(
-                x=[x0, x1, x1, x0], y=[0, 0, 100, 100], fill="toself",
-                fillcolor="rgba(255, 255, 255, 0.07)", line=dict(width=0),
-                hoverinfo='none', showlegend=False, mode='lines'
+            fig_main.add_trace(go.Bar(
+                x=[x0 + (x1-x0)/2], y=[100], width=(x1-x0).total_seconds() * 1000,
+                marker=dict(color="rgba(0, 0, 0, 0.25)", line=dict(width=0)),
+                hoverinfo='none', showlegend=False, base=0
             ), row=row_idx, col=1)
 
     # Wind Lines
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         midpoint = p1['time'] + (p2['time']-p1['time'])/2
-        alpha = 1.0 if check_daylight(midpoint, df_sun) else 0.2
+        alpha = 1.0 if check_daylight(midpoint, df_sun) else 0.25
         fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=1.7), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
 
-    # Tide Traces
+    # Tide Traces (RESTORED ACCURACY)
     for is_day_tide in [True, False]:
         t_data_x, t_data_y = [], []
         for _, row in df_tide.iterrows():
             if check_daylight(row['time'], df_sun) == is_day_tide:
                 t_data_x.extend([row['time'], None]); t_data_y.extend([row['height'], None])
         
-        t_line_color = "rgba(255,255,255,1.0)" if is_day_tide else "rgba(255,255,255,0.15)"
-        t_fill_color = "rgba(255,255,255,0.18)" if is_day_tide else "rgba(0,0,0,0)"
-        fig_main.add_trace(go.Scatter(x=t_data_x, y=t_data_y, line=dict(color=t_line_color, width=1.4 if is_day_tide else 0.8), fill='tozeroy' if is_day_tide else None, fillcolor=t_fill_color, mode='lines', showlegend=False), row=2, col=1)
+        t_line_color = "rgba(255,255,255,0.95)" if is_day_tide else "rgba(255,255,255,0.18)"
+        t_fill_color = "rgba(255,255,255,0.22)" if is_day_tide else "rgba(0,0,0,0)"
+        fig_main.add_trace(go.Scatter(x=t_data_x, y=t_data_y, line=dict(color=t_line_color, width=1.5 if is_day_tide else 0.8), fill='tozeroy' if is_day_tide else None, fillcolor=t_fill_color, mode='lines', showlegend=False), row=2, col=1)
 
     # UI Markers and Peak Labels
     for _, day in df_sun.iterrows():
@@ -133,7 +133,7 @@ try:
         if not d_day.empty:
             for idx in [d_day['speed'].idxmax(), d_day['speed'].idxmin()]:
                 f = d_day.loc[idx]
-                off = 4 if idx == d_day['speed'].idxmax() else -4
+                off = 4.2 if idx == d_day['speed'].idxmax() else -4.2
                 fig_main.add_annotation(x=f['time'], y=f['speed']+(off/2), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
                 fig_main.add_annotation(x=f['time'], y=f['speed']+off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
@@ -143,10 +143,10 @@ try:
         if (c > p and c > n) or (c < p and c < n):
             t = df_tide.iloc[i]
             is_day = check_daylight(t['time'], df_sun)
-            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8, color=f"rgba(255,255,255,{'1.0' if is_day else '0.2'})"), yshift=9 if c > p else -9, row=2, col=1)
+            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8.2, color=f"rgba(255,255,255,{'1.0' if is_day else '0.2'})"), yshift=10 if c > p else -10, row=2, col=1)
 
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
-    fig_main.update_layout(height=230, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=False, range=[crop_start, crop_end]), xaxis2=dict(visible=False, range=[crop_start, crop_end]), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, showticklabels=False, range=[-9, max_wind + 10]), yaxis2=dict(visible=False, range=[0, 2.4]))
+    fig_main.update_layout(height=230, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=False, range=[crop_start, crop_end]), xaxis2=dict(visible=False, range=[crop_start, crop_end]), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, showticklabels=False, range=[-9, max_wind + 10]), yaxis2=dict(visible=False, range=[0, 2.45]))
     st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False})
 
 except Exception as e:
