@@ -1,1 +1,4 @@
-# eastbourne-wind-v2
+streamlit
+requests
+pandas
+plotly
