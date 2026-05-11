@@ -42,21 +42,12 @@ def get_color(knots):
     if knots <= 28: return "rgba(255, 0, 0, 1.0)"       
     return "rgba(139, 0, 0, 1.0)"                       
 
-def find_local_extrema(series, window=5):
-    # Pure Python peak/valley finder to avoid scipy error
-    peaks, valleys = [], []
-    for i in range(window, len(series) - window):
-        subset = series[i-window:i+window+1]
-        if series[i] == max(subset): peaks.append(i)
-        elif series[i] == min(subset): valleys.append(i)
-    return peaks, valleys
-
 @st.cache_data(ttl=600)
 def get_weather_data():
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": LAT, "longitude": LON,
-        "hourly": ["wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"],
+        "hourly": ["wind_speed_10m", "wind_direction_10m"],
         "daily": ["sunrise", "sunset"],
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
@@ -64,7 +55,6 @@ def get_weather_data():
     df = pd.DataFrame({
         "time": pd.to_datetime(r["hourly"]["time"]),
         "speed": r["hourly"]["wind_speed_10m"],
-        "gust": r["hourly"]["wind_gusts_10m"],
         "dir": r["hourly"]["wind_direction_10m"]
     })
     sun = pd.DataFrame({
@@ -116,27 +106,53 @@ try:
     )
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. YESTERDAY'S DASHBOARD (Manual Peak Finder) ---
+    # --- 2. YESTERDAY'S DASHBOARD (MODIFIED) ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.30, 0.15])
 
-    # Wind Lines
-    fig_main.add_trace(go.Scatter(x=df_hourly['time'], y=df_hourly['gust'], fill='tonexty', fillcolor='rgba(255,255,255,0.05)', line=dict(width=0), showlegend=False), row=1, col=1)
-    fig_main.add_trace(go.Scatter(x=df_hourly['time'], y=df_hourly['speed'], line=dict(color='white', width=2), showlegend=False), row=1, col=1)
+    # Multi-colored wind line: We split into segments to show color changes on the line
+    for i in range(len(df_hourly)-1):
+        p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
+        fig_main.add_trace(go.Scatter(
+            x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']],
+            line=dict(color=get_color(p1['speed']), width=3),
+            mode='lines', showlegend=False, hoverinfo='skip'
+        ), row=1, col=1)
 
-    # Wind Peaks & Valleys
-    w_peaks, w_valleys = find_local_extrema(df_hourly['speed'].values, window=6)
-    for idx in w_peaks + w_valleys:
-        p = df_hourly.iloc[idx]
-        fig_main.add_annotation(x=p['time'], y=p['speed'], text=f"{round(p['speed'])}<br>➤", showarrow=False, 
-                                font=dict(size=9, color=get_color(p['speed'])), textangle=((p['dir']+180)%360)-90, row=1, col=1)
+    # DAILY MAX/MIN INDICATORS
+    for _, day_sun in df_sun.iterrows():
+        mask = (df_hourly['time'].dt.date == day_sun['date'])
+        day_data = df_hourly[mask]
+        if not day_data.empty:
+            for func, offset in [(day_data.loc[day_data['speed'].idxmax()], 1.5), 
+                                 (day_data.loc[day_data['speed'].idxmin()], -1.5)]:
+                heading = (func['dir'] + 180) % 360
+                fig_main.add_annotation(
+                    x=func['time'], y=func['speed'] + offset, 
+                    text=f"{round(func['speed'])}<br>➤", 
+                    showarrow=False, 
+                    font=dict(size=10, color="white"),
+                    textangle=0, # Keep text horizontal
+                    row=1, col=1
+                )
+                # Adding the arrow icon separately so it can be rotated without rotating the text
+                fig_main.add_annotation(
+                    x=func['time'], y=func['speed'], 
+                    text="➤", showarrow=False, 
+                    textangle=heading-90, 
+                    font=dict(size=12, color=get_color(func['speed'])),
+                    row=1, col=1
+                )
 
-    # Tide Silhouette & Peaks
+    # Tide Silhouette
     fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)', line=dict(color='#00d4ff', width=2), showlegend=False), row=2, col=1)
-    t_peaks, t_valleys = find_local_extrema(df_tide['height'].values, window=10)
-    for idx in t_peaks + t_valleys:
-        p = df_tide.iloc[idx]
-        fig_main.add_annotation(x=p['time'], y=p['height'], text=p['time'].strftime('%H:%M'), showarrow=False, 
-                                font=dict(size=8, color="#00d4ff"), yanchor="bottom" if idx in t_peaks else "top", row=2, col=1)
+
+    # Tide Timestamps (High/Low)
+    for i in range(1, len(df_tide)-1):
+        prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
+        if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
+            p = df_tide.iloc[i]
+            fig_main.add_annotation(x=p['time'], y=p['height'], text=p['time'].strftime('%H:%M'), showarrow=False, 
+                                    font=dict(size=8, color="#00d4ff"), yanchor="bottom" if curr > prev else "top", row=2, col=1)
 
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.3)", layer="below", line_width=0)
