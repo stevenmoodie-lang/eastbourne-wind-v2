@@ -25,8 +25,7 @@ def get_color(knots):
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
-        "latitude": lat,
-        "longitude": lon,
+        "latitude": lat, "longitude": lon,
         "hourly": "wind_speed_10m",
         "daily": "sunrise,sunset",
         "timezone": "Pacific/Auckland",
@@ -42,7 +41,7 @@ def get_weather_data(lat, lon):
 # --- SIDEBAR ---
 st.sidebar.title("⚙️ Settings")
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
-hide_night = st.sidebar.toggle("Hide Nighttime Hours", value=False)
+hide_night = st.sidebar.toggle("Hide Nighttime Hours", value=True)
 
 # --- DATA PROCESSING ---
 coords = STATIONS[selection]
@@ -87,14 +86,14 @@ if data and 'hourly' in data:
             hoverinfo='none'
         ))
 
-    # Invisible layer for hover data (this still shows time in the hover box for precision)
+    # Trace for hover
     fig.add_trace(go.Scatter(
         x=plot_df['time'], y=plot_df['wind'],
         mode='markers', marker=dict(opacity=0),
         name="Wind", showlegend=False
     ))
 
-    # Night Shading
+    # Night Shading (Normal Mode)
     if not hide_night:
         for i in range(len(sun_data)):
             if i < len(sun_data) - 1:
@@ -104,13 +103,24 @@ if data and 'hourly' in data:
                 )
 
     # NOW line
-    if not plot_df.empty:
-        idx_now = (plot_df['time'] - now_nz).abs().idxmin()
-        closest_time = plot_df.loc[idx_now, 'time']
-        fig.add_shape(
-            type="line", x0=closest_time, x1=closest_time, y0=0, y1=1,
-            xref="x", yref="paper", line=dict(color="green", width=2, dash="dot")
-        )
+    idx_now = (plot_df['time'] - now_nz).abs().idxmin()
+    closest_time = plot_df.loc[idx_now, 'time']
+    fig.add_shape(
+        type="line", x0=closest_time, x1=closest_time, y0=0, y1=1,
+        xref="x", yref="paper", line=dict(color="green", width=2, dash="dot")
+    )
+
+    # --- X-AXIS DAYTIME LABEL LOGIC ---
+    if hide_night:
+        # In Hidden Night mode, we label the start of each day segment
+        day_starts = plot_df.groupby(plot_df['time'].dt.date)['time'].first()
+        tickvals = day_starts.tolist()
+        ticktext = [t.strftime("%a %d %b") for t in day_starts]
+    else:
+        # In Full mode, we place the label at Midday (12:00) so it's in the daytime
+        # and doesn't get buried in the grey night bars.
+        tickvals = [t.replace(hour=12) for t in sun_data['date']]
+        ticktext = [t.strftime("%a %d %b") for t in tickvals]
 
     fig.update_layout(
         title=f"Wind Forecast: {selection}",
@@ -118,11 +128,8 @@ if data and 'hourly' in data:
         hovermode="x unified",
         xaxis=dict(
             type='category' if hide_night else 'date',
-            # Format: Mon 12 May
-            tickformat="%a %d %b", 
-            # This forces Plotly to only show one tick per day to avoid 
-            # showing the same day name multiple times
-            dtick=86400000.0 if not hide_night else None, 
+            tickvals=tickvals,
+            ticktext=ticktext,
             title=""
         ),
         yaxis=dict(title="Knots", rangemode="tozero"),
@@ -131,8 +138,6 @@ if data and 'hourly' in data:
 
     st.title(f"🌬️ {selection} Tracker")
     st.plotly_chart(fig, use_container_width=True)
-    
-    # Precise current reading
     st.metric("Current Forecasted Wind", f"{plot_df.loc[idx_now, 'wind']:.1f} Knots")
 
 else:
