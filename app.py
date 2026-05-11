@@ -10,7 +10,6 @@ import numpy as np
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
-# Standard CSS - no fixed positioning to prevent clipping
 st.markdown("""
     <style>
         .stApp { background-color: #3d5a73; color: #f8f9fa; }
@@ -88,7 +87,7 @@ if data and 'hourly' in data:
 
     idx_now = (df['time'] - now_nz).abs().idxmin()
     
-    # --- TITLE & REFRESH ---
+    # --- HEADER ---
     t_col1, t_col2 = st.columns([10, 1])
     with t_col1:
         st.title("Eastbourne Wind")
@@ -111,15 +110,15 @@ if data and 'hourly' in data:
     fig_top.update_layout(height=80, margin=dict(t=20, b=0, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0.05, xaxis=dict(showticklabels=False, showgrid=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False))
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- MAIN GRAPHS ---
+    # --- MAIN GRAPHS (Tightened spacing) ---
     fig_bot = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=False, 
-        vertical_spacing=0.08, 
+        vertical_spacing=0.02, 
         row_heights=[0.05, 0.45, 0.40] 
     )
     
-    # 1. Micro Heatstrip
+    # 1. Row Heatstrip
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
         for s in range(3):
@@ -130,7 +129,7 @@ if data and 'hourly' in data:
                 fig_bot.add_trace(go.Bar(x=[t0+(t1-t0)/2], y=[1], width=(t1-t0).total_seconds()*1000, marker_color=get_color(w_mean), showlegend=False, hoverinfo='none'), row=1, col=1)
                 fig_bot.add_annotation(x=t0+(t1-t0)/2, y=0.5, text="➤", textangle=d_mean-90, showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    # 2. Wind Graph (Peaks & Valleys)
+    # 2. Wind Graph (Peaks & Valleys with Directions)
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         fig_bot.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], mode='lines', line=dict(color=get_color(p1['wind'], opacity=0.2 if p1['is_night'] else 1.0), width=2.5), showlegend=False, hoverinfo='none'), row=2, col=1)
@@ -138,14 +137,17 @@ if data and 'hourly' in data:
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
+            # Peaks
             p = day_block.loc[day_block['wind'].idxmax()]
-            fig_bot.add_annotation(x=p['time'], y=p['wind'], text=f"<b>{round(p['wind'])}</b>", showarrow=False, yshift=12, font=dict(size=11, color="white"), row=2, col=1)
-            fig_bot.add_annotation(x=p['time'], y=p['wind'], text="➤", textangle=p['dir']-90, showarrow=False, yshift=12, xshift=14, font=dict(size=9, color="white"), row=2, col=1)
-            # Valley Speed
+            fig_bot.add_annotation(x=p['time'], y=p['wind'], text=f"<b>{round(p['wind'])}</b>", showarrow=False, yshift=12, xshift=-8, font=dict(size=11, color="white"), row=2, col=1)
+            fig_bot.add_annotation(x=p['time'], y=p['wind'], text="➤", textangle=p['dir']-90, showarrow=False, yshift=12, xshift=8, font=dict(size=9, color="white"), row=2, col=1)
+            
+            # Valleys (Restored speed + direction)
             v = day_block.loc[day_block['wind'].idxmin()]
-            fig_bot.add_annotation(x=v['time'], y=v['wind'], text=f"<b>{round(v['wind'])}</b>", showarrow=False, yshift=-12, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
+            fig_bot.add_annotation(x=v['time'], y=v['wind'], text=f"<b>{round(v['wind'])}</b>", showarrow=False, yshift=-12, xshift=-8, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
+            fig_bot.add_annotation(x=v['time'], y=v['wind'], text="➤", textangle=v['dir']-90, showarrow=False, yshift=-12, xshift=8, font=dict(size=8, color="#d1d9e0"), row=2, col=1)
 
-    # 3. Tide Silhouette (Timestamps)
+    # 3. Tide Silhouette
     fig_bot.add_trace(go.Scatter(x=tide_df['time'], y=tide_df['height'], fill='tozeroy', mode='lines', line=dict(color='#5dade2', width=1.1), fillcolor='rgba(93, 173, 226, 0.12)', showlegend=False, hoverinfo='none'), row=3, col=1)
     
     t_vals = tide_df['height'].values
@@ -154,10 +156,6 @@ if data and 'hourly' in data:
             fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=t_vals[i], text=tide_df.iloc[i]['time'].strftime('%H:%M'), showarrow=False, yshift=10, font=dict(size=9, color="#5dade2"), row=3, col=1)
         if t_vals[i] < t_vals[i-1] and t_vals[i] < t_vals[i+1]:
             fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=t_vals[i], text=tide_df.iloc[i]['time'].strftime('%H:%M'), showarrow=False, yshift=-10, font=dict(size=9, color="#d1d9e0"), row=3, col=1)
-
-    # Night Shading
-    for i in range(len(sun_data)-1):
-        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.3, line_width=0, row="all")
 
     # Day labels
     tick_vals = [sun_data.iloc[i]['sunrise'] + (sun_data.iloc[i]['sunset'] - sun_data.iloc[i]['sunrise']) / 2 for i in range(len(sun_data))]
