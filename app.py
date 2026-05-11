@@ -105,26 +105,27 @@ if data and 'hourly' in data:
     ))
 
     for i, row in daily_summary.iterrows():
-        date_label = pd.to_datetime(row['date_only']).strftime('%a %d')
+        date_label = pd.to_datetime(row['date_only']).strftime('%a')
         fig_top.add_annotation(x=str(row['date_only']), y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11))
         fig_top.add_annotation(x=str(row['date_only']), y=0.5, text=f"<b>{round(row['wind'])} kn</b>", showarrow=False, font=dict(size=13, color="white"))
 
     fig_top.update_layout(height=110, margin=dict(t=35, b=0, l=5, r=5), template="plotly_white", bargap=0.05, xaxis=dict(showticklabels=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False))
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. BOTTOM GRAPH (HEATSTRIP + SPEED ONLY) ---
+    # --- 2. BOTTOM GRAPH ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.15, 0.85])
     
     # ROW 1: Heatstrip
     for i, row in daily_summary.iterrows():
+        midpoint = pd.to_datetime(row['date_only']) + pd.Timedelta(hours=12)
         fig_bot.add_trace(go.Bar(
-            x=[pd.to_datetime(row['date_only']) + pd.Timedelta(hours=12)], y=[1], 
+            x=[midpoint], y=[1], 
             width=1000*3600*24, marker_color=get_color(row['wind']), showlegend=False, hoverinfo='none'
         ), row=1, col=1)
-        fig_bot.add_annotation(x=pd.to_datetime(row['date_only']) + pd.Timedelta(hours=12), y=0.5, yref="y1", 
+        fig_bot.add_annotation(x=midpoint, y=0.5, yref="y1", 
                                text=f"<b>{get_direction_label(row['dir'])}</b>", showarrow=False, font=dict(size=10, color="white"), row=1, col=1)
 
-    # ROW 2: Wind Speed Line (Segments for color coding)
+    # ROW 2: Wind Speed Line
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         opacity = 0.15 if (p1['is_night'] and p2['is_night']) else 1.0
@@ -145,11 +146,23 @@ if data and 'hourly' in data:
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="black", opacity=0.08, line_width=0, row="all")
 
+    # --- CUSTOM X-AXIS LABLES ---
+    # Centering day names at 12:00 PM for each day
+    tick_vals = [pd.to_datetime(d) + pd.Timedelta(hours=12) for d in df['date_only'].unique()]
+    tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
+
     fig_bot.update_layout(
         height=350, margin=dict(t=10, b=0, l=5, r=5), template="plotly_white",
-        yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False), # Heatstrip
-        yaxis2=dict(title=None, side="left", showgrid=True, tickfont=dict(size=9)), # Speed (No title)
-        xaxis2=dict(showgrid=True, tickfont=dict(size=9, color="gray"))
+        yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False),
+        yaxis2=dict(title=None, side="left", showgrid=True, tickfont=dict(size=9)),
+        xaxis2=dict(
+            tickmode='array',
+            tickvals=tick_vals,
+            ticktext=tick_text,
+            showgrid=True,
+            gridcolor="rgba(200,200,200,0.2)",
+            tickfont=dict(size=11, color="black", family="Arial Black")
+        )
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
