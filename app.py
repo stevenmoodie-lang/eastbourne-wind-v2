@@ -97,7 +97,7 @@ if data and 'hourly' in data:
             st.cache_data.clear()
             st.rerun()
 
-    # --- TOP HEATSTRIP ---
+    # --- TOP DAILY HEATSTRIP ---
     daily_summary = df[~df['is_night']].groupby('date_only').agg({'wind': 'mean', 'dir': lambda x: x.mode()[0]}).reset_index()
     fig_top = go.Figure()
     fig_top.add_trace(go.Bar(x=daily_summary['date_only'].astype(str), y=[1]*len(daily_summary), marker_color=[get_color(w) for w in daily_summary['wind']], showlegend=False, hoverinfo='none'))
@@ -115,10 +115,10 @@ if data and 'hourly' in data:
         rows=3, cols=1, 
         shared_xaxes=False, 
         vertical_spacing=0.0, 
-        row_heights=[0.03, 0.20, 0.20] # Wind graph reduced by 1/3 (from 0.30 to 0.20)
+        row_heights=[0.015, 0.20, 0.20] # Heatstrip reduced by half (0.03 -> 0.015)
     )
     
-    # 1. Direction Row
+    # 1. Hourly Direction Row (The thin heatstrip)
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
         for s in range(3):
@@ -129,7 +129,7 @@ if data and 'hourly' in data:
                 fig_bot.add_trace(go.Bar(x=[t0+(t1-t0)/2], y=[1], width=(t1-t0).total_seconds()*1000, marker_color=get_color(w_mean), showlegend=False, hoverinfo='none'), row=1, col=1)
                 fig_bot.add_annotation(x=t0+(t1-t0)/2, y=0.5, text="➤", textangle=d_mean-90, showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    # 2. Wind Speed Row (Now 20%)
+    # 2. Wind Speed Row (20%)
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         fig_bot.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], mode='lines', line=dict(color=get_color(p1['wind'], opacity=0.2 if p1['is_night'] else 1.0), width=2.5), showlegend=False, hoverinfo='none'), row=2, col=1)
@@ -154,7 +154,7 @@ if data and 'hourly' in data:
         if t_vals[i] < t_vals[i-1] and t_vals[i] < t_vals[i+1]:
             fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=t_vals[i], text=tide_df.iloc[i]['time'].strftime('%H:%M'), showarrow=False, yshift=-10, font=dict(size=9, color="#d1d9e0"), row=3, col=1)
 
-    # Global Shading
+    # Global Night Shading
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#1a2a3a", opacity=0.4, line_width=0, row="all")
 
