@@ -55,6 +55,7 @@ if data and 'hourly' in data:
         'wind_kmh': data['hourly']['wind_speed_10m']
     })
     df['wind'] = df['wind_kmh'] * 0.539957
+    df['date_only'] = df['time'].dt.date
 
     daily = data['daily']
     sun_data = pd.DataFrame({
@@ -63,8 +64,11 @@ if data and 'hourly' in data:
         'sunset': pd.to_datetime(daily['sunset'])
     })
 
+    # Merge sun data into main df for easy "is_night" checking
+    df = df.merge(sun_data, left_on='date_only', right_on='date')
+    df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
+
     # --- PLOTTING WITH SUBPLOTS ---
-    # Row 1 is the thick color bar (15% height), Row 2 is the line graph (85% height)
     fig = make_subplots(
         rows=2, cols=1, 
         shared_xaxes=True, 
@@ -75,10 +79,15 @@ if data and 'hourly' in data:
     # 1. ADD COLOR BAR (TOP)
     for i in range(len(df)):
         knots = df.loc[i, 'wind']
+        is_night = df.loc[i, 'is_night']
+        
+        # Force grey if it's nighttime
+        bar_color = "rgb(200, 200, 200)" if is_night else get_color(knots)
+        
         fig.add_trace(go.Bar(
             x=[df.loc[i, 'time']],
-            y=[1], # Constant height to make it a solid block
-            marker_color=get_color(knots),
+            y=[1],
+            marker_color=bar_color,
             marker_line_width=0,
             showlegend=False,
             hoverinfo='none'
@@ -103,12 +112,12 @@ if data and 'hourly' in data:
         name="Wind", showlegend=False
     ), row=2, col=1)
 
-    # Night Shading
+    # Night Shading on the Line Graph
     for i in range(len(sun_data)):
         if i < len(sun_data) - 1:
             fig.add_vrect(
                 x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1],
-                fillcolor="gray", opacity=0.1, line_width=0
+                fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1
             )
 
     # NOW line
@@ -124,15 +133,11 @@ if data and 'hourly' in data:
         height=500,
         template="plotly_white",
         hovermode="x unified",
-        xaxis2=dict(
-            tickvals=tickvals,
-            ticktext=ticktext,
-            title=""
-        ),
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1]), # Bar chart Y-axis
-        yaxis2=dict(title="Knots", rangemode="tozero"), # Line chart Y-axis
+        xaxis2=dict(tickvals=tickvals, ticktext=ticktext, title=""),
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1]),
+        yaxis2=dict(title="Knots", rangemode="tozero"),
         margin=dict(t=20, b=40, l=10, r=10),
-        bargap=0 # Makes the top bar look like one solid thick line
+        bargap=0
     )
 
     st.title(f"🌬️ {selection} Tracker")
