@@ -5,31 +5,22 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import pytz
+import numpy as np
 
 # --- PAGE CONFIG & CSS ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
-# Custom CSS for Cloudy Slate Theme
 st.markdown("""
     <style>
-        .stApp {
-            background-color: #3d5a73;
-            color: #f8f9fa;
-        }
+        .stApp { background-color: #3d5a73; color: #f8f9fa; }
         .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
         h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; color: #ffffff !important; }
         .subtitle { font-size: 0.9rem; color: #d1d9e0; margin-bottom: 10px; }
         .stButton button { 
-            margin-top: 8px; 
-            padding: 2px 10px; 
-            background-color: #4e6a82; 
-            color: white; 
-            border: 1px solid #7f8c8d; 
+            margin-top: 8px; padding: 2px 10px; 
+            background-color: #4e6a82; color: white; border: 1px solid #7f8c8d; 
         }
-        .stPlotlyChart { margin-bottom: 5px !important; } 
-        section[data-testid="stSidebar"] {
-            background-color: #2c3e50;
-        }
+        section[data-testid="stSidebar"] { background-color: #2c3e50; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -71,7 +62,7 @@ def get_weather_data(lat, lon, days):
     r = requests.get(url, params=params, timeout=10)
     return r.json() if r.status_code == 200 else None
 
-# --- SIDEBAR & DATA FETCHING ---
+# --- DATA FETCHING ---
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
 forecast_range = st.sidebar.radio("Range", ["7 Days", "3 Days"], index=0)
 days_to_fetch = 7 if forecast_range == "7 Days" else 3
@@ -122,17 +113,12 @@ if data and 'hourly' in data:
         date_label = pd.to_datetime(row['date_only']).strftime('%a')
         fig_top.add_annotation(x=str(row['date_only']), y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11, color="white"))
         fig_top.add_annotation(x=str(row['date_only']), y=0.6, text=f"<b>{round(row['wind'])} kn</b>", showarrow=False, font=dict(size=13, color="white"))
-        fig_top.add_annotation(
-            x=str(row['date_only']), y=0.2, 
-            text="➤", textangle=row['dir']-90,
-            showarrow=False, font=dict(size=12, color="rgba(255,255,255,0.8)")
-        )
+        fig_top.add_annotation(x=str(row['date_only']), y=0.2, text="➤", textangle=row['dir']-90, showarrow=False, font=dict(size=12, color="rgba(255,255,255,0.8)"))
 
     fig_top.update_layout(
         height=110, margin=dict(t=35, b=0, l=5, r=5), 
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        bargap=0.05, 
-        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False), 
+        bargap=0.05, xaxis=dict(showticklabels=False, showgrid=False, zeroline=False), 
         yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False, zeroline=False)
     )
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
@@ -140,29 +126,47 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.12, 0.88])
     
-    # ROW 1: 4-Hourly Heatstrip
-    df_4h = df.resample('4h', on='time', origin='start_day').agg({
-        'wind': 'mean', 
-        'dir': 'mean',
-        'is_night': lambda x: x.mode()[0] 
-    }).reset_index()
-    
-    for _, row in df_4h.iterrows():
-        block_color = "#2c3e50" if row['is_night'] else get_color(row['wind'])
-        arrow_color = "rgba(255,255,255,0.15)" if row['is_night'] else "white"
+    # Logic for Dynamic 3-Day/3-Night Segments
+    heat_blocks = []
+    for i in range(len(sun_data)):
+        day_start = sun_data.iloc[i]['sunrise']
+        day_end = sun_data.iloc[i]['sunset']
+        
+        # Day segments
+        day_step = (day_end - day_start) / 3
+        for s in range(3):
+            t0, t1 = day_start + s*day_step, day_start + (s+1)*day_step
+            mask = (df['time'] >= t0) & (df['time'] < t1)
+            if not df[mask].empty:
+                heat_blocks.append({'time': t0, 'end': t1, 'wind': df[mask]['wind'].mean(), 'dir': df[mask]['dir'].mean(), 'is_night': False})
+
+        # Night segments (between today's sunset and tomorrow's sunrise)
+        if i < len(sun_data) - 1:
+            night_start = day_end
+            night_end = sun_data.iloc[i+1]['sunrise']
+            night_step = (night_end - night_start) / 3
+            for s in range(3):
+                t0, t1 = night_start + s*night_step, night_start + (s+1)*night_step
+                mask = (df['time'] >= t0) & (df['time'] < t1)
+                if not df[mask].empty:
+                    heat_blocks.append({'time': t0, 'end': t1, 'wind': df[mask]['wind'].mean(), 'dir': df[mask]['dir'].mean(), 'is_night': True})
+
+    for b in heat_blocks:
+        block_color = "#2c3e50" if b['is_night'] else get_color(b['wind'])
+        arrow_color = "rgba(255,255,255,0.15)" if b['is_night'] else "white"
+        mid_point = b['time'] + (b['end'] - b['time']) / 2
+        width_ms = (b['end'] - b['time']).total_seconds() * 1000
 
         fig_bot.add_trace(go.Bar(
-            x=[row['time'] + timedelta(hours=2)], y=[1], width=1000*3600*4,
-            marker_color=block_color, showlegend=False, hoverinfo='none'
+            x=[mid_point], y=[1], width=width_ms, marker_color=block_color, showlegend=False, hoverinfo='none'
         ), row=1, col=1)
         
         fig_bot.add_annotation(
-            x=row['time'] + timedelta(hours=2), y=0.5, yref="y1",
-            text="➤", textangle=row['dir']-90,
+            x=mid_point, y=0.5, yref="y1", text="➤", textangle=b['dir']-90,
             showarrow=False, font=dict(size=14, color=arrow_color), row=1, col=1
         )
 
-    # ROW 2: Wind Speed Line
+    # Wind Speed Line
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         opacity = 0.2 if (p1['is_night'] and p2['is_night']) else 1.0
@@ -176,16 +180,14 @@ if data and 'hourly' in data:
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.4, line_width=0, row="all")
     
-    # PEAK & VALLEY (Daylight Only)
+    # Peak/Valley labels
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
-            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
-                                   showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
+            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
             valley = day_block.loc[day_block['wind'].idxmin()]
-            fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
-                                   showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
+            fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
 
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
     tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
