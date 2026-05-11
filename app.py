@@ -1,4 +1,4 @@
-import streamlit as st
+    import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
@@ -57,7 +57,6 @@ def get_weather_data():
         return None, None, None
     r = response.json()
     
-    # helper for timezone handling - returns DatetimeIndex directly
     def to_local_index(raw_list):
         return pd.to_datetime(raw_list).tz_localize(None)
 
@@ -80,7 +79,7 @@ def get_weather_data():
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
     if df_hourly is None:
-        st.warning("Weather API is busy. Retrying soon...")
+        st.warning("Weather API is busy...")
         st.stop()
 
     now = datetime.datetime.now().replace(microsecond=0)
@@ -135,12 +134,12 @@ try:
         fig_main.add_vline(x=midday, line_width=0.5, line_dash="dot", line_color="rgba(255,255,255,0.1)")
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{day['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.5)"), row=1, col=1)
         
-        # Wind Labels
-        d_data = df_hourly[df_hourly['time'].dt.date == day['date']]
-        if not d_data.empty:
-            for idx in [d_data['speed'].idxmax(), d_data['speed'].idxmin()]:
-                f = d_data.loc[idx]
-                off = 3.5 if idx == d_data['speed'].idxmax() else -3.5
+        # FIXED: Wind Labels only for Daylight
+        d_daylight = df_hourly[(df_hourly['time'] >= day['sunrise']) & (df_hourly['time'] <= day['sunset'])]
+        if not d_daylight.empty:
+            for idx in [d_daylight['speed'].idxmax(), d_daylight['speed'].idxmin()]:
+                f = d_daylight.loc[idx]
+                off = 3.5 if idx == d_daylight['speed'].idxmax() else -3.5
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + (off/2.5), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
