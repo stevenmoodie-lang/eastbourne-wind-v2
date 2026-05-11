@@ -2,107 +2,111 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
 
-# --- CONFIG & STYLING ---
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="NZ Wind Tracker", layout="wide", page_icon="🌬️")
 
+# Custom CSS for better look
 st.markdown("""
     <style>
-    .main { background-color: #f0f2f6; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e0e0e0; }
     </style>
-    """, unsafe_allow_html=True) # Changed from unsafe_allow_index to unsafe_allow_html
+    """, unsafe_allow_html=True)
 
-# --- DATA FETCHING ---
-@st.cache_data(ttl=1800)
-def get_niwa_wind(location):
-    # Ensure no extra spaces are messing up the URL
-    clean_loc = str(location).strip()
-    
-    # Try the 'combined' endpoint first
-    url = f"https://weather-api-azure.niwa.co.nz/api/location/{clean_loc}/combined"
-    
+# --- API FUNCTIONS ---
+BASE_URL = "https://weather-api-azure.niwa.co.nz/api"
+
+@st.cache_data(ttl=3600)
+def fetch_locations():
+    """Fetch the list of all available locations to find IDs."""
     try:
-        response = requests.get(url, timeout=10)
-        
-        # If 'combined' doesn't exist for this station, try 'forecast'
-        if response.status_code == 404:
-            st.info(f"'{clean_loc}' not found in 'combined'. Trying 'forecast'...")
-            url = f"https://weather-api-azure.niwa.co.nz/api/location/{clean_loc}/forecast"
-            response = requests.get(url, timeout=10)
-            
-        response.raise_for_status()
+        response = requests.get(f"{BASE_URL}/location", timeout=10)
         return response.json()
-    except requests.exceptions.HTTPError as e:
-        st.error(f"NIWA API says: {e}")
-        return None
-    except Exception as e:
-        st.error(f"Connection Error: {e}")
-        return None
+    except:
+        return []
 
-# --- UI SIDEBAR ---
-st.sidebar.header("📍 Location Settings")
-# Change the default in the sidebar to the ID you found
-loc_input = st.sidebar.text_input("Enter NIWA Location ID", value="113776245")
-unit_type = st.sidebar.selectbox("Wind Unit", ["km/h", "knots"])
+def get_wind_data(loc_id):
+    """Try Combined endpoint first, fall back to Forecast."""
+    endpoints = ["combined", "forecast"]
+    for ep in endpoints:
+        url = f"{BASE_URL}/location/{loc_id}/{ep}"
+        try:
+            res = requests.get(url, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                if 'values' in data and len(data['values']) > 0:
+                    return data, ep
+        except:
+            continue
+    return None, None
 
-st.sidebar.markdown("---")
-st.sidebar.write("💡 **Tip:** Use IDs like `wellington`, `auckland`, or `christchurch`.")
+# --- SIDEBAR: STATION DISCOVERY ---
+st.sidebar.title("📍 Station Finder")
+all_locs = fetch_locations()
 
-# --- MAIN DASHBOARD ---
-st.title("🌬️ NIWA Wind Forecast")
-st.write(f"Showing high-resolution data for: **{loc_input.title()}**")
+if all_locs:
+    search_query = st.sidebar.text_input("Search for a place (e.g. Baring or Hutt)", "")
+    if search_query:
+        matches = [l for l in all_locs if search_query.lower() in l['name'].lower()]
+        if matches:
+            st.sidebar.write("Found stations:")
+            for m in matches[:5]: # Show top 5
+                if st.sidebar.button(f"Select {m['name']} (ID: {m['id']})"):
+                    st.session_state.loc_id = str(m['id'])
+        else:
+            st.sidebar.warning("No matches found.")
 
-data = get_niwa_wind(loc_input.lower())
+# Default ID (Wellington Airport is 3445 or 17600 usually)
+if 'loc_id' not in st.session_state:
+    st.session_state.loc_id = "113776245" # Your Baring Head ID
 
-if data and 'values' in data:
-    # Process Data
+final_loc = st.sidebar.text_input("Active Location ID", value=st.session_state.loc_id)
+
+# --- MAIN UI ---
+st.title("🌬️ NIWA Wind Tracker")
+st.info(f"Currently viewing Station ID: **{final_loc}**")
+
+data, source_type = get_wind_data(final_loc)
+
+if data:
     df = pd.DataFrame(data['values'])
     df['time'] = pd.to_datetime(df['time'])
     
-    # Unit Conversion if knots selected
-    if unit_type == "knots":
-        df['wind'] = df['wind'] * 0.539957
-        df['wind_gust'] = df['wind_gust'] * 0.539957
-
-    # 1. Current Conditions (Latest available data point)
-    current = df.iloc[0]
+    # Header Metrics
+    latest = df.iloc[0]
+    c1, c2, c3, c4 = st.columns(4)
     
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Current Wind", f"{current['wind']:.1f} {unit_type}")
-    col2.metric("Peak Gusts", f"{current['wind_gust']:.1f} {unit_type}")
-    col3.metric("Direction", f"{current['wind_dir_compass']}")
-    
-    # Windchill is a unique NIWA combined field
-    if 'wind_chill' in current:
-        col4.metric("Wind Chill", f"{current['wind_chill']}°C")
+    # Function to safe-get values
+    def val(k): return latest.get(k, "N/A")
 
-    st.markdown("---")
+    c1.metric("Wind Speed", f"{val('wind')} km/h")
+    c2.metric("Gusts", f"{val('wind_gust')} km/h")
+    c3.metric("Direction", f"{val('wind_dir_compass')}")
+    c4.metric("Data Source", source_type.title())
 
-    # 2. Wind Trend Chart (Plotly for Interactivity)
-    st.subheader("72-Hour Wind & Gust Forecast")
-    
+    st.divider()
+
+    # Charting
+    st.subheader("Wind Forecast Trend")
     fig = px.line(df, x='time', y=['wind', 'wind_gust'], 
-                  labels={'value': unit_type, 'time': 'Time'},
-                  color_discrete_map={"wind": "#1f77b4", "wind_gust": "#ff7f0e"},
-                  template="plotly_white")
+                  labels={'value': 'km/h', 'time': 'Time'},
+                  color_discrete_map={"wind": "#007BFF", "wind_gust": "#FF4B4B"})
     
-    fig.update_layout(hovermode="x unified", legend_title_text='Legend')
-    st.plotly_chart(fig, use_container_container_width=True)
+    fig.update_layout(hovermode="x unified", legend_title="Type")
+    st.plotly_chart(fig, use_container_width=True)
 
-    # 3. Blasting Table (Filter for high wind sessions)
-    st.subheader("🚀 Optimal Windows")
-    min_wind = 15 if unit_type == "knots" else 28
-    
-    blasting_df = df[df['wind'] >= min_wind][['time', 'wind', 'wind_gust', 'wind_dir_compass']].copy()
-    
-    if not blasting_df.empty:
-        st.success(f"Found {len(blasting_df)} high-wind periods in the forecast!")
-        blasting_df['time'] = blasting_df['time'].dt.strftime('%a %I:%M %p')
-        st.dataframe(blasting_df, use_container_width=True, hide_index=True)
+    # Blasting Table
+    st.subheader("🚀 High Wind Windows")
+    high_wind = df[df['wind'] >= 25].copy()
+    if not high_wind.empty:
+        high_wind['time'] = high_wind['time'].dt.strftime('%a %H:%M')
+        st.dataframe(high_wind[['time', 'wind', 'wind_gust', 'wind_dir_compass']], use_container_width=True)
     else:
-        st.info("No high-wind windows detected in the current forecast.")
+        st.write("No 'blasting' winds (25+ km/h) expected soon.")
 
 else:
-    st.warning("No data found. Please check the Location ID and try again.")
+    st.error(f"Could not find data for ID: {final_loc}")
+    st.write("Suggestions:")
+    st.write("1. Use the **Station Finder** in the sidebar.")
+    st.write("2. Try the ID for Wellington Airport: `3445`.")
