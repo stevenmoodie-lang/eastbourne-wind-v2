@@ -6,90 +6,91 @@ import plotly.express as px
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Eastbourne Wind Tracker", layout="wide", page_icon="🌬️")
 
-# Custom Styling
-st.markdown("""
-    <style>
-    .main { background-color: #f0f2f6; }
-    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    </style>
-    """, unsafe_allow_html=True)
+# --- COORDINATES ---
+# Latitude and Longitude for specific spots
+STATIONS = {
+    "Baring Head": {"lat": -41.405, "lon": 174.868},
+    "Eastbourne Beach": {"lat": -41.291, "lon": 174.894},
+    "Wellington Airport": {"lat": -41.327, "lon": 174.805},
+    "Lyall Bay": {"lat": -41.332, "lon": 174.796}
+}
 
-# --- DATA FETCHING (Public Website Feed) ---
-def get_wind_data(location_name):
-    # This URL targets the public JSON feed used by niwa.co.nz
-    # We use URL encoding to handle spaces (e.g., 'Baring%20Head')
-    formatted_name = location_name.replace(" ", "%20")
-    url = f"https://weather.niwa.co.nz/api/v1/forecast/{formatted_name}"
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept": "application/json"
+# --- DATA FETCHING (Open-Meteo) ---
+def get_wind_data(lat, lon):
+    # Open-Meteo Forecast API
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": "wind_speed_10m,wind_gusts_10m,wind_direction_10m",
+        "timezone": "Pacific/Auckland",
+        "wind_speed_unit": "kmh",
+        "forecast_days": 3
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, params=params, timeout=10)
         if response.status_code == 200:
             return response.json()
-        else:
-            return None
-    except Exception as e:
-        st.error(f"Connection failed: {e}")
+        return None
+    except:
         return None
 
 # --- SIDEBAR ---
-st.sidebar.title("📍 Station Select")
-# Names must match the NIWA website URL slugs exactly
-stations = {
-    "Baring Head": "Baring Head",
-    "Wellington Airport": "Wellington (Airport)",
-    "Lower Hutt": "Lower Hutt",
-    "Wellington City": "Wellington"
-}
+st.sidebar.title("📍 Choose Your Spot")
+selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
+coords = STATIONS[selection]
 
-selection = st.sidebar.selectbox("Choose a location:", list(stations.keys()))
-loc_name = stations[selection]
+unit = st.sidebar.radio("Units", ["km/h", "knots"])
 
 # --- MAIN DASHBOARD ---
-st.title(f"🌬️ {selection} Wind Report")
+st.title(f"🌬️ {selection} Wind Outlook")
 
-with st.spinner('Fetching latest gusts...'):
-    data = get_wind_data(loc_name)
+data = get_wind_data(coords["lat"], coords["lon"])
 
-if data and 'values' in data:
-    df = pd.DataFrame(data['values'])
-    df['time'] = pd.to_datetime(df['time'])
+if data and 'hourly' in data:
+    # Process Data
+    hourly = data['hourly']
+    df = pd.DataFrame({
+        'time': pd.to_datetime(hourly['time']),
+        'wind': hourly['wind_speed_10m'],
+        'gust': hourly['wind_gusts_10m'],
+        'direction': hourly['wind_direction_10m']
+    })
     
-    # Metrics Row
-    latest = df.iloc[0]
+    # Conversion to Knots if selected
+    if unit == "knots":
+        df['wind'] = df['wind'] * 0.539957
+        df['gust'] = df['gust'] * 0.539957
+
+    # 1. Latest Metrics
+    # Filter for current time or closest to it
+    now = pd.Timestamp.now(tz='Pacific/Auckland').replace(tzinfo=None)
+    current_row = df.iloc[(df['time'] - now).abs().argsort()[:1]].iloc[0]
+    
     m1, m2, m3 = st.columns(3)
-    
-    m1.metric("Wind Speed", f"{latest['wind']} km/h")
-    m2.metric("Peak Gusts", f"{latest['wind_gust']} km/h")
-    m3.metric("Direction", f"{latest.get('wind_dir_compass', 'N/A')}")
+    m1.metric("Current Wind", f"{current_row['wind']:.1f} {unit}")
+    m2.metric("Current Gusts", f"{current_row['gust']:.1f} {unit}")
+    m3.metric("Direction Angle", f"{current_row['direction']}°")
 
     st.divider()
 
-    # Trend Chart
-    st.subheader("Forecast Trend")
-    fig = px.line(df, x='time', y=['wind', 'wind_gust'],
-                  labels={'value': 'km/h', 'time': 'Time'},
-                  color_discrete_map={"wind": "#007BFF", "wind_gust": "#FF4B4B"},
+    # 2. Wind Chart
+    st.subheader("Next 72 Hours")
+    fig = px.line(df, x='time', y=['wind', 'gust'],
+                  labels={'value': unit, 'time': 'Time'},
+                  color_discrete_map={"wind": "#007BFF", "gust": "#FF4B4B"},
                   template="plotly_white")
     
-    fig.update_layout(hovermode="x unified", legend_title="Type")
+    # Shade the "Blasting" Zone (over 20 knots / 37 km/h)
+    threshold = 20 if unit == "knots" else 37
+    fig.add_hline(y=threshold, line_dash="dot", line_color="green", annotation_text="Kite/Windsurf Threshold")
+    
     st.plotly_chart(fig, use_container_width=True)
 
-    # Blasting Windows
-    st.subheader("🚀 High Wind Alerts (>30 km/h)")
-    high_wind = df[df['wind_gust'] >= 30].copy()
-    
-    if not high_wind.empty:
-        high_wind['time'] = high_wind['time'].dt.strftime('%a %I:%M %p')
-        st.dataframe(high_wind[['time', 'wind', 'wind_gust', 'wind_dir_compass']], 
-                     use_container_width=True, hide_index=True)
-    else:
-        st.info("The air is still! No big gusts forecasted today.")
+    # 3. Forecast Table
+    with st.expander("View Raw Hourly Forecast"):
+        st.dataframe(df, use_container_width=True)
 
 else:
-    st.error(f"Could not find data for {selection}.")
-    st.info("Try selecting 'Wellington City' in the sidebar—it's the most reliable station.")
+    st.error("Open-Meteo is currently unreachable. Check your internet connection.")
