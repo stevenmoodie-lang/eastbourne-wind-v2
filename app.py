@@ -39,14 +39,13 @@ def get_niwa_data(location_name):
 st.sidebar.title("🌬️ Station Select")
 # These are the "Slugs" which are most likely to work with the Azure API
 station_map = {
-    "Baring Head (Raw Wind)": "baring-head",
-    "Wellington City": "wellington",
-    "Lower Hutt": "lower-hutt",
-    "Wellington Airport": "wellington-airport"
+    "Baring Head": "Baring Head",
+    "Wellington": "Wellington",
+    "Lower Hutt": "Lower Hutt",
+    "Wellington Airport": "Wellington Airport"
 }
-
 selection = st.sidebar.selectbox("Choose a location:", list(station_map.keys()))
-loc_id = station_map[selection]
+loc_name = station_map[selection]
 
 unit = st.sidebar.radio("Units", ["km/h", "knots"])
 
