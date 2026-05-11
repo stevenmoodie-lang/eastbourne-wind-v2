@@ -7,7 +7,7 @@ import datetime
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Baring Head Wind", layout="wide")
+st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
 # --- CSS: MOBILE OPTIMIZATION ---
 st.markdown("""
@@ -28,10 +28,10 @@ st.markdown("""
             margin-bottom: 0.5rem;
         }
     </style>
-    <div class="custom-title">Baring Head Wind</div>
+    <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
 
-# --- SETTINGS: UPDATED TO BARING HEAD ---
+# --- SETTINGS: DATA FROM BARING HEAD ---
 LAT, LON = -41.405, 174.867
 
 def get_color(knots, alpha=1.0):
@@ -72,7 +72,7 @@ try:
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
     max_wind = df_hourly['speed'].max()
 
-    # --- 1. SLIMMED ARROW RIBBON (HALF HEIGHT) ---
+    # --- 1. SLIMMED ARROW RIBBON ---
     segments = []
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -106,9 +106,10 @@ try:
     )
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. COMPACT WIND & TIDE DASHBOARD (HALF HEIGHT) ---
+    # --- 2. COMPACT WIND & TIDE DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
+    # Wind Lines
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
@@ -127,6 +128,7 @@ try:
                 mode='lines', showlegend=False, hoverinfo='skip'
             ), row=1, col=1)
 
+    # Days & Tide Markers
     for _, day_sun in df_sun.iterrows():
         midpoint = day_sun['sunrise'] + (day_sun['sunset'] - day_sun['sunrise']) / 2
         fig_main.add_annotation(
@@ -157,12 +159,14 @@ try:
 
     fig_main.update_layout(
         height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False, fixedrange=True),
-        xaxis2=dict(visible=False, fixedrange=True),
+        # Enabled fixedrange=False on X for pinch-to-zoom
+        xaxis=dict(visible=False, fixedrange=False),
+        xaxis2=dict(visible=False, fixedrange=False),
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 10]),
         yaxis2=dict(showgrid=False, zeroline=False, fixedrange=True, showticklabels=False, range=[0, 2.2])
     )
-    st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False})
+    # Added scrollZoom for easier mobile scaling
+    st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
 
 except Exception as e:
     st.error(f"Layout Error: {e}")
