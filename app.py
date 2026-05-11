@@ -53,15 +53,24 @@ def get_weather_data():
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
     r = requests.get(url, params=params).json()
-    df = pd.DataFrame({"time": pd.to_datetime(r["hourly"]["time"]), "speed": r["hourly"]["wind_speed_10m"], "dir": r["hourly"]["wind_direction_10m"]})
-    sun = pd.DataFrame({"date": pd.to_datetime(r["daily"]["time"]).date, "sunrise": pd.to_datetime(r["daily"]["sunrise"]), "sunset": pd.to_datetime(r["daily"]["sunset"])})
+    # Ensure naive local time for all dataframes
+    df = pd.DataFrame({
+        "time": pd.to_datetime(r["hourly"]["time"]).tz_localize(None), 
+        "speed": r["hourly"]["wind_speed_10m"], 
+        "dir": r["hourly"]["wind_direction_10m"]
+    })
+    sun = pd.DataFrame({
+        "date": pd.to_datetime(r["daily"]["time"]).date, 
+        "sunrise": pd.to_datetime(r["daily"]["sunrise"]).dt.tz_localize(None), 
+        "sunset": pd.to_datetime(r["daily"]["sunset"]).dt.tz_localize(None)
+    })
     t_range = pd.date_range(start=df['time'].min(), end=df['time'].max(), freq='15min')
     df_tide = pd.DataFrame({"time": t_range, "height": [calculate_wellington_tide(t) for t in t_range]})
     return df, sun, df_tide
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    now = datetime.datetime.now()
+    now = datetime.datetime.now().replace(microsecond=0)
     max_wind = df_hourly['speed'].max()
     crop_start, crop_end = df_sun['sunrise'].min(), df_sun['sunset'].max()
 
@@ -91,10 +100,11 @@ try:
     # --- 2. MAIN DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
-    # Wind Traces
+    # Wind Traces with Midpoint Check for Perfect Sync
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
-        night_mode = not is_daylight(p1['time'])
+        midpoint = p1['time'] + (p2['time'] - p1['time']) / 2
+        night_mode = not is_daylight(midpoint)
         fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], 0.12 if night_mode else 1.0), width=1.5), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
 
     # Tide Traces
@@ -117,11 +127,9 @@ try:
         fig_main.add_annotation(x=day['sunrise'], y=-2, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.25)"), row=1, col=1)
         fig_main.add_annotation(x=day['sunset'], y=-2, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.25)"), row=1, col=1)
 
-        # Wind peak/lull labels + Arrows
         d_data = df_hourly[(df_hourly['time'] >= day['sunrise']) & (df_hourly['time'] <= day['sunset'])]
         if not d_data.empty:
             for f, off in [(d_data.loc[d_data['speed'].idxmax()], 3.5), (d_data.loc[d_data['speed'].idxmin()], -3.5)]:
-                # Restored Arrow heads
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + (off/2.5), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
@@ -131,7 +139,6 @@ try:
         if (c > p and c > n) or (c < p and c < n):
             t = df_tide.iloc[i]
             night_mode = not is_daylight(t['time'])
-            # Reduced opacity for better balance
             label_alpha = 0.05 if night_mode else 0.4 
             fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color=f"rgba(255,255,255,{label_alpha})"), yshift=7 if c > p else -7, row=2, col=1)
 
