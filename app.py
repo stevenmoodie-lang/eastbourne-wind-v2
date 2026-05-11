@@ -120,8 +120,16 @@ if data and 'hourly' in data:
 
     for i, row in daily_summary.iterrows():
         date_label = pd.to_datetime(row['date_only']).strftime('%a')
+        # Day name
         fig_top.add_annotation(x=str(row['date_only']), y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11, color="white"))
-        fig_top.add_annotation(x=str(row['date_only']), y=0.5, text=f"<b>{round(row['wind'])} kn</b>", showarrow=False, font=dict(size=13, color="white"))
+        # Wind speed knots
+        fig_top.add_annotation(x=str(row['date_only']), y=0.6, text=f"<b>{round(row['wind'])} kn</b>", showarrow=False, font=dict(size=13, color="white"))
+        # Wind direction arrow below speed
+        fig_top.add_annotation(
+            x=str(row['date_only']), y=0.2, 
+            text="➤", textangle=row['dir']-90,
+            showarrow=False, font=dict(size=12, color="rgba(255,255,255,0.8)")
+        )
 
     fig_top.update_layout(
         height=110, margin=dict(t=35, b=0, l=5, r=5), 
@@ -133,7 +141,7 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.12, 0.88])
     
-    # ROW 1: 4-Hourly Heatstrip with Night-Aware Colouring
+    # ROW 1: 4-Hourly Heatstrip
     df_4h = df.resample('4h', on='time', origin='start_day').agg({
         'wind': 'mean', 
         'dir': 'mean',
@@ -142,7 +150,6 @@ if data and 'hourly' in data:
     
     for _, row in df_4h.iterrows():
         block_color = "#2c3e50" if row['is_night'] else get_color(row['wind'])
-        # Further dimmed nighttime arrows
         arrow_color = "rgba(255,255,255,0.15)" if row['is_night'] else "white"
 
         fig_bot.add_trace(go.Bar(
