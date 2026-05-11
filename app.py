@@ -25,6 +25,11 @@ STATIONS = {
     "Wellington Airport": {"lat": -41.327, "lon": 174.805}
 }
 
+def get_direction_label(deg):
+    """Converts degrees to cardinal direction labels."""
+    labels = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+    return labels[int((deg + 22.5) % 360 / 45)]
+
 def get_color(knots, opacity=1.0):
     colors = {
         "lightblue": f"rgba(173, 216, 230, {opacity})",
@@ -46,7 +51,7 @@ def get_weather_data(lat, lon, days):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat, "longitude": lon,
-        "hourly": ["wind_speed_10m", "wind_direction_10m"], # Fetching direction
+        "hourly": ["wind_speed_10m", "wind_direction_10m"],
         "daily": "sunrise,sunset",
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kmh", "forecast_days": days
     }
@@ -84,22 +89,17 @@ if data and 'hourly' in data:
     col1, col2 = st.columns([6, 1]) 
     with col1:
         st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
-        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> ({coords['lat']}, {coords['lon']})</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> — Currently blowing <b>{get_direction_label(df.loc[idx_now, 'dir'])}</b></div>", unsafe_allow_html=True)
     with col2:
         if st.button("🔄 Refresh"):
             st.cache_data.clear()
             st.rerun()
 
-    # --- 1. TOP GRAPH: DAYLIGHT FOCUS ---
+    # --- 1. TOP GRAPH ---
     day_df = df[~df['is_night']].copy().reset_index(drop=True)
     day_df['x_key'] = day_df.index.astype(str)
-
     fig_top = go.Figure()
-    fig_top.add_trace(go.Bar(
-        x=day_df['x_key'], y=[1] * len(day_df),
-        marker_color=[get_color(w) for w in day_df['wind']],
-        marker_line_width=0, showlegend=False, hoverinfo='none'
-    ))
+    fig_top.add_trace(go.Bar(x=day_df['x_key'], y=[1]*len(day_df), marker_color=[get_color(w) for w in day_df['wind']], showlegend=False, hoverinfo='none'))
 
     for d_date in day_df['date_only'].unique():
         group = day_df[day_df['date_only'] == d_date]
@@ -108,14 +108,12 @@ if data and 'hourly' in data:
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
         fig_top.add_annotation(x=str(center_idx), y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11))
         fig_top.add_annotation(x=str(center_idx), y=0.5, text=f"<b>{avg_knots} kn</b>", showarrow=False, font=dict(size=13, color="white"))
-        
         last_idx = group.index[-1]
-        if last_idx < len(day_df) - 1:
-            fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
+        if last_idx < len(day_df)-1: fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
 
     fig_top.update_layout(height=125, margin=dict(t=35, b=5, l=5, r=5), template="plotly_white", bargap=0, xaxis=dict(type='category', showticklabels=False), yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False))
 
-    # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
+    # --- 2. BOTTOM GRAPH ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
     # Heatstrip
@@ -124,62 +122,47 @@ if data and 'hourly' in data:
                                 marker_color="rgb(180,180,180)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
-    # Main Line Graph
+    # Line Graph + Direction Arrows (Improved)
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         is_segment_night = p1['is_night'] and p2['is_night']
-        line_opacity = 0.15 if is_segment_night else 1.0
-        line_width = 1.2 if is_segment_night else 2.5
         fig_bot.add_trace(go.Scatter(
             x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], 
-            mode='lines', line=dict(color=get_color(p1['wind'], opacity=line_opacity), width=line_width), 
+            mode='lines', line=dict(color=get_color(p1['wind'], opacity=0.15 if is_segment_night else 1.0), width=2.5), 
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Direction Indicators (Arrows every 3 hours)
+    # Adding high-visibility direction markers
     for i in range(0, len(df), 3):
         row = df.iloc[i]
         fig_bot.add_annotation(
             x=row['time'], y=row['wind'],
-            text="▲", # Wind Arrow symbol
-            textangle=row['dir'], # Rotate based on degree
+            text="➤", # More solid arrow
+            textangle=row['dir']-90, # Offset for standard compass rotation
             showarrow=False,
-            font=dict(size=12, color=get_color(row['wind'], opacity=0.8 if not row['is_night'] else 0.2)),
-            yshift=0, row=2, col=1
+            font=dict(size=16, color="black" if not row['is_night'] else "rgba(0,0,0,0.1)"),
+            row=2, col=1
         )
 
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
-            avg_knots = round(day_block['wind'].mean())
+            # Using cardinal direction in the heatstrip instead of just speed
+            mode_dir = get_direction_label(day_block['dir'].mode()[0])
             midday = datetime.combine(d_date, time(12, 0))
-            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10, color="black"), row=2, col=1)
-            fig_bot.add_annotation(x=midday, y=0.5, yref="y1", text=f"<b>{avg_knots} kn</b>", showarrow=False, font=dict(size=10, color="white"), row=1, col=1)
+            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=20, font=dict(size=10), row=2, col=1)
+            fig_bot.add_annotation(x=midday, y=0.5, yref="y1", text=f"<b>{mode_dir}</b>", showarrow=False, font=dict(size=11, color="white"), row=1, col=1)
 
     for i in range(len(sun_data)):
         midday_dt = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
         fig_bot.add_annotation(x=midday_dt, y=1.02, yref="y1", text=f"<b>{midday_dt.strftime('%a')}</b>", showarrow=False, font=dict(size=9), yanchor="bottom")
         if i < len(sun_data) - 1:
             sunset, sunrise_next = sun_data['sunset'].iloc[i], sun_data['sunrise'].iloc[i+1]
-            mid_night = sunset + (sunrise_next - sunset) / 2
             fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="black", opacity=0.12, line_width=0, row=2, col=1)
-            fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
-    fig_bot.add_vline(x=df.loc[idx_now, 'time'], line_width=1.5, line_dash="dot", line_color="green")
-    
-    fig_bot.update_layout(
-        height=320, margin=dict(t=15, b=0, l=5, r=5), 
-        template="plotly_white", hovermode="x unified",
-        xaxis2=dict(showticklabels=False), 
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False),
-        yaxis2=dict(showticklabels=True, side="left", tickfont=dict(size=8, color="gray"), showgrid=True, dtick=10, fixedrange=True, layer="below traces"), 
-        bargap=0
-    )
+    fig_bot.update_layout(height=350, margin=dict(t=15, b=0, l=5, r=5), template="plotly_white", xaxis2=dict(showticklabels=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False), yaxis2=dict(showticklabels=True, side="left", tickfont=dict(size=8, color="gray"), showgrid=True, dtick=10, fixedrange=True))
 
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
     st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
-
-else:
-    st.error("Error loading data")
