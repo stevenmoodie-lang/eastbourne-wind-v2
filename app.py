@@ -53,17 +53,21 @@ def get_weather_data():
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
     r = requests.get(url, params=params).json()
-    # Ensure naive local time for all dataframes
+    
+    # Process all times to naive local for unified comparison
     df = pd.DataFrame({
         "time": pd.to_datetime(r["hourly"]["time"]).tz_localize(None), 
         "speed": r["hourly"]["wind_speed_10m"], 
         "dir": r["hourly"]["wind_direction_10m"]
     })
+    
+    # FIXED: Removed .dt as pd.to_datetime returns an index/series that handles tz_localize directly here
     sun = pd.DataFrame({
         "date": pd.to_datetime(r["daily"]["time"]).date, 
-        "sunrise": pd.to_datetime(r["daily"]["sunrise"]).dt.tz_localize(None), 
-        "sunset": pd.to_datetime(r["daily"]["sunset"]).dt.tz_localize(None)
+        "sunrise": pd.to_datetime(r["daily"]["sunrise"]).tz_localize(None), 
+        "sunset": pd.to_datetime(r["daily"]["sunset"]).tz_localize(None)
     })
+    
     t_range = pd.date_range(start=df['time'].min(), end=df['time'].max(), freq='15min')
     df_tide = pd.DataFrame({"time": t_range, "height": [calculate_wellington_tide(t) for t in t_range]})
     return df, sun, df_tide
@@ -100,7 +104,7 @@ try:
     # --- 2. MAIN DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
-    # Wind Traces with Midpoint Check for Perfect Sync
+    # Wind Traces (Sync fixed with segment midpoint check)
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         midpoint = p1['time'] + (p2['time'] - p1['time']) / 2
