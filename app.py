@@ -62,7 +62,7 @@ def get_weather_data():
         "sunrise": pd.to_datetime(r["daily"]["sunrise"]),
         "sunset": pd.to_datetime(r["daily"]["sunset"])
     })
-    tide_times = pd.date_range(start=df['time'].min(), periods=24*7*2, freq='30min')
+    tide_times = pd.date_range(start=df['time'].min(), end=df['time'].max(), freq='15min')
     tide_heights = [1.0 + 0.6 * np.sin(2 * np.pi * (t.hour + t.minute/60) / 12.4) for t in tide_times]
     df_tide = pd.DataFrame({"time": tide_times, "height": tide_heights})
     return df, sun, df_tide
@@ -108,76 +108,73 @@ try:
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
     # --- 2. THE COMPRESSED WIND & TIDE DASHBOARD ---
-    fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.40, 0.20])
+    fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.50, 0.25])
 
-    # Precise Line Coloring
+    # Wind Lines with Sunrise/Sunset splits
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
         sr, ss = day_info['sunrise'], day_info['sunset']
-        
         transition_points = sorted([t for t in [sr, ss] if p1['time'] < t < p2['time']])
         current_times = [p1['time']] + transition_points + [p2['time']]
-        
         for j in range(len(current_times)-1):
             t_start, t_end = current_times[j], current_times[j+1]
             frac = (t_start - p1['time']) / (p2['time'] - p1['time']) if p2['time'] != p1['time'] else 0
             interp_speed = p1['speed'] + frac * (p2['speed'] - p1['speed'])
-            
             is_night = t_start < sr or t_start >= ss
             alpha = 0.08 if is_night else 1.0
-            
             fig_main.add_trace(go.Scatter(
                 x=[t_start, t_end], y=[interp_speed, interp_speed + (p2['speed']-p1['speed']) * ((t_end-t_start)/(p2['time']-p1['time']))],
                 line=dict(color=get_color(interp_speed, alpha), width=2.5 if not is_night else 1),
                 mode='lines', showlegend=False, hoverinfo='skip'
             ), row=1, col=1)
 
-    # Daytime Labels & Day Names (Centered ABOVE the plot lines)
+    # Annotations: Days & Peaks/Valleys
     for _, day_sun in df_sun.iterrows():
         midpoint = day_sun['sunrise'] + (day_sun['sunset'] - day_sun['sunrise']) / 2
         
-        # Position centered day name above the graph using data coordinates
+        # Day Names (Smaller Font, Centered over Daylight)
         fig_main.add_annotation(
             x=midpoint, y=max_wind + 8, text=f"<b>{day_sun['date'].strftime('%a')}</b>",
-            showarrow=False, font=dict(size=14, color="white"), row=1, col=1
+            showarrow=False, font=dict(size=11, color="white"), row=1, col=1
+        )
+        # Tide Day Names (Centered)
+        fig_main.add_annotation(
+            x=midpoint, y=1.8, text=f"<b>{day_sun['date'].strftime('%a')}</b>",
+            showarrow=False, font=dict(size=10, color="rgba(255,255,255,0.4)"), row=2, col=1
         )
 
         day_mask = (df_hourly['time'] >= day_sun['sunrise']) & (df_hourly['time'] <= day_sun['sunset'])
         day_data = df_hourly[day_mask]
-        
         if not day_data.empty:
             for func, offset in [(day_data.loc[day_data['speed'].idxmax()], 4.0), 
                                  (day_data.loc[day_data['speed'].idxmin()], -4.0)]:
                 heading = (func['dir'] + 180) % 360
-                
-                # Tiny White Arrow with larger gap (offset/2.5)
-                fig_main.add_annotation(
-                    x=func['time'], y=func['speed'] + (offset/2.5), 
-                    text="➤", textangle=heading-90, showarrow=False,
-                    font=dict(size=9, color="white"), row=1, col=1
-                )
-                # Wind Speed Number
-                fig_main.add_annotation(
-                    x=func['time'], y=func['speed'] + offset, 
-                    text=f"<b>{round(func['speed'])}</b>", 
-                    showarrow=False, font=dict(size=10, color="white"), row=1, col=1
-                )
+                fig_main.add_annotation(x=func['time'], y=func['speed'] + (offset/2.5), text="➤", textangle=heading-90, showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
+                fig_main.add_annotation(x=func['time'], y=func['speed'] + offset, text=f"<b>{round(func['speed'])}</b>", showarrow=False, font=dict(size=10, color="white"), row=1, col=1)
 
-    # Tide Section
-    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.05)', line=dict(color='#00d4ff', width=1.5), showlegend=False), row=2, col=1)
+    # Tide Graph with Timestamps
+    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.05)', line=dict(color='#00d4ff', width=1.5), showlegend=False, hoverinfo='skip'), row=2, col=1)
     
+    # Calculate High/Low Tide markers
+    for i in range(1, len(df_tide)-1):
+        prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
+        if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
+            t = df_tide.iloc[i]
+            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, 
+                                    font=dict(size=8, color="#00d4ff"), yshift=7 if curr > prev else -7, row=2, col=1)
+
     # Shading & Now Line
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.5)", layer="below", line_width=0)
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
 
     fig_main.update_layout(
-        height=280, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=320, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, fixedrange=True),
-        xaxis2=dict(showgrid=False, tickformat="%a", dtick=86400000.0, tickfont=dict(size=10, color="rgba(255,255,255,0.2)"), fixedrange=True),
+        xaxis2=dict(visible=False, fixedrange=True),
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, range=[-5, max_wind + 12]),
-        yaxis2=dict(visible=False, fixedrange=True)
+        yaxis2=dict(showgrid=False, zeroline=False, fixedrange=True, range=[0, 2.2])
     )
     st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False})
 
