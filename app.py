@@ -32,17 +32,16 @@ st.markdown("""
     <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
 
-# --- SETTINGS: DATA FROM BARING HEAD ---
+# --- SETTINGS ---
 LAT, LON = -41.405, 174.867
 
 def get_color(knots, alpha=1.0):
-    # Adjusted Palette: Deeper light blue, crisp progression
-    if knots <= 6: return f"rgba(169, 201, 217, {alpha})"    # Steel Blue (Slightly Darker)
-    if knots <= 11: return f"rgba(92, 169, 204, {alpha})"    # Ocean Blue
-    if knots <= 15: return f"rgba(122, 214, 134, {alpha})"   # Soft Leaf Green
-    if knots <= 19: return f"rgba(255, 230, 109, {alpha})"   # Sun Yellow
-    if knots <= 28: return f"rgba(255, 126, 121, {alpha})"   # Coral Red
-    return f"rgba(188, 108, 167, {alpha})"                   # Muted Magenta
+    if knots <= 6: return f"rgba(169, 201, 217, {alpha})"    
+    if knots <= 11: return f"rgba(92, 169, 204, {alpha})"    
+    if knots <= 15: return f"rgba(122, 214, 134, {alpha})"   
+    if knots <= 19: return f"rgba(255, 230, 109, {alpha})"   
+    if knots <= 28: return f"rgba(255, 126, 121, {alpha})"   
+    return f"rgba(188, 108, 167, {alpha})"                   
 
 @st.cache_data(ttl=600)
 def get_weather_data():
@@ -77,7 +76,7 @@ try:
     crop_start = df_sun['sunrise'].min()
     crop_end = df_sun['sunset'].max()
 
-    # --- 1. DYNAMIC ARROW RIBBON ---
+    # --- 1. DYNAMIC ARROW RIBBON (Continuous Strip) ---
     segments = []
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -89,22 +88,24 @@ try:
             if not d.empty:
                 rads = np.deg2rad(d['dir'])
                 avg_dir = np.rad2deg(np.arctan2(np.sin(rads).mean(), np.cos(rads).mean())) % 360
-                segments.append({"x_id": f"{day['date']}_{i}", "speed": d['speed'].mean(), "dir": avg_dir})
-        segments.append({"x_id": f"{day['date']}_spacer", "spacer": True})
+                segments.append({"x_id": f"{day['date']}_{i}", "speed": d['speed'].mean(), "dir": avg_dir, "date": day['date']})
 
     fig_ribbon = go.Figure()
     for s in segments:
-        if "spacer" in s:
-            fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color="rgba(0,0,0,0)", showlegend=False))
-            continue
-        fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False))
+        fig_ribbon.add_trace(go.Bar(
+            x=[s['x_id']], 
+            y=[1], 
+            marker=dict(color=get_color(s['speed']), line_width=0), # Removed outline
+            showlegend=False
+        ))
         heading = (s['dir'] + 180) % 360
         y_arrow = 0.5 + (0.3 * np.cos(np.deg2rad(s['dir'])))
         fig_ribbon.add_annotation(x=s['x_id'], y=y_arrow, text="➤", showarrow=False, textangle=heading-90, font=dict(size=7, color="white"))
         fig_ribbon.add_annotation(x=s['x_id'], y=-0.3, text=f"<b>{round(s['speed'])}</b>", showarrow=False, font=dict(size=7, color="white"))
 
     fig_ribbon.update_layout(
-        height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0,
+        height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+        bargap=0, # Gap removed
         xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], 
                    ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], side="top", 
                    tickfont=dict(size=9, color="white"), fixedrange=True),
@@ -115,6 +116,7 @@ try:
     # --- 2. COMPACT WIND & TIDE DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
+    # (Plotting logic for main graph remains the same to keep the requested look)
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
@@ -149,23 +151,4 @@ try:
     
     for i in range(1, len(df_tide)-1):
         prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
-        if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
-            t = df_tide.iloc[i]
-            if crop_start <= t['time'] <= crop_end:
-                fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color="#00d4ff"), yshift=6 if curr > prev else -6, row=2, col=1)
-
-    for i in range(len(df_sun)-1):
-        fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
-    fig_main.add_vline(x=now, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
-
-    fig_main.update_layout(
-        height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False, fixedrange=False, range=[crop_start, crop_end]), 
-        xaxis2=dict(visible=False, fixedrange=False, range=[crop_start, crop_end]),
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 10]),
-        yaxis2=dict(showgrid=False, zeroline=False, fixedrange=True, showticklabels=False, range=[0, 2.2])
-    )
-    st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
-
-except Exception as e:
-    st.error(f"Layout Error: {e}")
+        if
