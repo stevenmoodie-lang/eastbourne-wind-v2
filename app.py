@@ -65,12 +65,8 @@ def get_weather_data(lat, lon, days):
 
 @st.cache_data(ttl=3600)
 def get_tide_data(days):
-    # Using 'h' instead of 'H' for newer pandas versions
     start_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     times = pd.date_range(start=start_time, periods=days*24*4, freq='15min')
-    
-    # Simulate Wellington tide harmonics (semi-diurnal)
-    # Wellington tide range is approx 0.5m to 1.6m
     tide_heights = [1.0 + 0.5 * np.sin((t.timestamp() / 22357) * np.pi) for t in times]
     return pd.DataFrame({'time': times, 'height': tide_heights})
 
@@ -101,17 +97,6 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- HEADER ---
-    idx_now = (df['time'] - now_nz).abs().idxmin()
-    col1, col2 = st.columns([6, 1]) 
-    with col1:
-        st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
-        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> — Currently <b>{get_direction_label(df.loc[idx_now, 'dir'])}</b></div>", unsafe_allow_html=True)
-    with col2:
-        if st.button("🔄 Refresh"):
-            st.cache_data.clear()
-            st.rerun()
-
     # --- 1. TOP SUMMARY ---
     day_df = df[~df['is_night']].copy()
     daily_summary = day_df.groupby('date_only').agg({'wind': 'mean', 'dir': lambda x: x.mode()[0]}).reset_index()
@@ -135,14 +120,26 @@ if data and 'hourly' in data:
         bargap=0.05, xaxis=dict(showticklabels=False, showgrid=False, zeroline=False), 
         yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False, zeroline=False)
     )
+    
+    # Header display
+    idx_now = (df['time'] - now_nz).abs().idxmin()
+    col1, col2 = st.columns([6, 1]) 
+    with col1:
+        st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
+        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> — Currently <b>{get_direction_label(df.loc[idx_now, 'dir'])}</b></div>", unsafe_allow_html=True)
+    with col2:
+        if st.button("🔄 Refresh"):
+            st.cache_data.clear()
+            st.rerun()
+
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. BOTTOM GRAPHS (Wind + Tide) ---
+    # --- 2. BOTTOM GRAPHS (Segments, Wind, Tide) ---
     fig_bot = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=True, 
-        vertical_spacing=0.04, 
-        row_heights=[0.1, 0.6, 0.3]
+        vertical_spacing=0.02, 
+        row_heights=[0.1, 0.65, 0.25]
     )
     
     # Segments
@@ -155,7 +152,6 @@ if data and 'hourly' in data:
             mask = (df['time'] >= t0) & (df['time'] < t1)
             if not df[mask].empty:
                 heat_blocks.append({'time': t0, 'end': t1, 'wind': df[mask]['wind'].mean(), 'dir': df[mask]['dir'].mean(), 'is_night': False})
-
         if i < len(sun_data) - 1:
             night_start, night_end = day_end, sun_data.iloc[i+1]['sunrise']
             night_step = (night_end - night_start) / 3
@@ -189,12 +185,12 @@ if data and 'hourly' in data:
     fig_bot.add_trace(go.Scatter(
         x=tide_df['time'], y=tide_df['height'],
         fill='tozeroy', mode='lines',
-        line=dict(color='#5dade2', width=2),
-        fillcolor='rgba(93, 173, 226, 0.2)',
+        line=dict(color='#5dade2', width=1.5),
+        fillcolor='rgba(93, 173, 226, 0.15)',
         showlegend=False, hoverinfo='none'
     ), row=3, col=1)
 
-    # Peak/Valley (Wind)
+    # Wind Peak/Valley labels
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
@@ -203,20 +199,23 @@ if data and 'hourly' in data:
             valley = day_block.loc[day_block['wind'].idxmin()]
             fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
 
-    # Night Shading (Applied to all)
+    # Night Shading (Across all rows)
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.35, line_width=0, row="all")
 
+    # Time Labels and Axis Config
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
     tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
 
     fig_bot.update_layout(
         height=550, margin=dict(t=10, b=0, l=5, r=5), 
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False),
-        yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.05)"),
-        yaxis3=dict(showticklabels=True, title=None, showgrid=False, range=[0, 2], tickfont=dict(size=9)),
-        xaxis3=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(size=11, family="Arial Black"))
+        yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False, zeroline=False),
+        yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.05)", zeroline=False),
+        yaxis3=dict(showticklabels=False, showgrid=False, zeroline=False),
+        # Days go on X-Axis 2 (The Wind Graph axis)
+        xaxis2=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(size=11, family="Arial Black", color="white")),
+        xaxis3=dict(showticklabels=False, showgrid=False)
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
