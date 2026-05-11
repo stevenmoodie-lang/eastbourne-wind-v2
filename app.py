@@ -115,7 +115,7 @@ if data and 'hourly' in data:
         rows=3, cols=1, 
         shared_xaxes=False, 
         vertical_spacing=0.0, 
-        row_heights=[0.015, 0.20, 0.10] # Tide reduced by half (0.20 -> 0.10)
+        row_heights=[0.015, 0.15, 0.10] # Wind reduced to 0.15
     )
     
     # 1. Hourly Direction Row
@@ -129,7 +129,7 @@ if data and 'hourly' in data:
                 fig_bot.add_trace(go.Bar(x=[t0+(t1-t0)/2], y=[1], width=(t1-t0).total_seconds()*1000, marker_color=get_color(w_mean), showlegend=False, hoverinfo='none'), row=1, col=1)
                 fig_bot.add_annotation(x=t0+(t1-t0)/2, y=0.5, text="➤", textangle=d_mean-90, showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    # 2. Wind Speed Row (20%)
+    # 2. Wind Speed Row (0.15)
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         fig_bot.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], mode='lines', line=dict(color=get_color(p1['wind'], opacity=0.2 if p1['is_night'] else 1.0), width=2.5), showlegend=False, hoverinfo='none'), row=2, col=1)
@@ -144,7 +144,7 @@ if data and 'hourly' in data:
             fig_bot.add_annotation(x=v['time'], y=v['wind'], text=f"<b>{round(v['wind'])}</b>", showarrow=False, yshift=-12, xshift=-8, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
             fig_bot.add_annotation(x=v['time'], y=v['wind'], text="➤", textangle=v['dir']-90, showarrow=False, yshift=-12, xshift=8, font=dict(size=8, color="#d1d9e0"), row=2, col=1)
 
-    # 3. Tide Row (10%)
+    # 3. Tide Row (0.10)
     fig_bot.add_trace(go.Scatter(x=tide_df['time'], y=tide_df['height'], fill='tozeroy', mode='lines', line=dict(color='#5dade2', width=1.1), fillcolor='rgba(93, 173, 226, 0.12)', showlegend=False, hoverinfo='none'), row=3, col=1)
     
     t_vals = tide_df['height'].values
