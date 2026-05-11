@@ -151,4 +151,23 @@ try:
     
     for i in range(1, len(df_tide)-1):
         prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
-        if
+        if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
+            t = df_tide.iloc[i]
+            if crop_start <= t['time'] <= crop_end:
+                fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color="#00d4ff"), yshift=6 if curr > prev else -6, row=2, col=1)
+
+    for i in range(len(df_sun)-1):
+        fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
+    fig_main.add_vline(x=now, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
+
+    fig_main.update_layout(
+        height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(visible=False, fixedrange=False, range=[crop_start, crop_end]), 
+        xaxis2=dict(visible=False, fixedrange=False, range=[crop_start, crop_end]),
+        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 10]),
+        yaxis2=dict(showgrid=False, zeroline=False, fixedrange=True, showticklabels=False, range=[0, 2.2])
+    )
+    st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
+
+except Exception as e:
+    st.error(f"Layout Error: {e}")
