@@ -24,7 +24,6 @@ STATIONS = {
 }
 
 def get_color(knots, opacity=1.0):
-    # Using the lightened Amber (255, 200, 50) for contrast
     colors = {
         "lightblue": f"rgba(173, 216, 230, {opacity})",
         "dodgerblue": f"rgba(30, 144, 255, {opacity})",
@@ -78,11 +77,12 @@ if data and 'hourly' in data:
 
     # --- 1. TOP GRAPH: DAYLIGHT FOCUS ---
     day_df = df[~df['is_night']].copy().reset_index(drop=True)
-    day_df['time_str'] = day_df['time'].dt.strftime('%Y-%m-%d %H:%M') 
+    # Use index-based strings to prevent Plotly from seeing gaps in the clock
+    day_df['x_key'] = day_df.index.astype(str)
 
     fig_top = go.Figure()
     fig_top.add_trace(go.Bar(
-        x=day_df['time_str'], y=[1] * len(day_df),
+        x=day_df['x_key'], y=[1] * len(day_df),
         marker_color=[get_color(w) for w in day_df['wind']],
         marker_line_width=0, showlegend=False,
         hoverinfo='none'
@@ -95,11 +95,11 @@ if data and 'hourly' in data:
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
         
         # Day Header
-        fig_top.add_annotation(x=day_df['time_str'].iloc[center_idx], y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
+        fig_top.add_annotation(x=str(center_idx), y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
         
         # Average text INSIDE the color box
         fig_top.add_annotation(
-            x=day_df['time_str'].iloc[center_idx], y=0.5, 
+            x=str(center_idx), y=0.5, 
             text=f"<b>{avg_knots} kn</b>", 
             showarrow=False, 
             font=dict(size=13, color="white"), 
@@ -109,12 +109,12 @@ if data and 'hourly' in data:
         # White divider between days
         last_idx = group.index[-1]
         if last_idx < len(day_df) - 1:
-            fig_top.add_vline(x=day_df['time_str'].iloc[last_idx], line_width=8, line_color="white")
+            fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
 
     fig_top.update_layout(
         height=125, margin=dict(t=35, b=5, l=5, r=5),
         template="plotly_white", bargap=0,
-        xaxis=dict(showticklabels=False, showgrid=False),
+        xaxis=dict(type='category', showticklabels=False, showgrid=False),
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False)
     )
 
@@ -137,7 +137,7 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # PEAKS AND VALLEYS (Max/Min per day)
+    # PEAKS AND VALLEYS
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
