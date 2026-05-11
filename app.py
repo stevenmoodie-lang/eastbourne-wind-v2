@@ -24,7 +24,6 @@ STATIONS = {
 }
 
 def get_color(knots, opacity=1.0):
-    # Convert named colors to RGBA for ultra-dimming
     colors = {
         "lightblue": f"rgba(173, 216, 230, {opacity})",
         "dodgerblue": f"rgba(30, 144, 255, {opacity})",
@@ -33,7 +32,6 @@ def get_color(knots, opacity=1.0):
         "red": f"rgba(255, 0, 0, {opacity})",
         "darkred": f"rgba(139, 0, 0, {opacity})"
     }
-    
     if knots < 5: return colors["lightblue"]
     if knots <= 10: return colors["dodgerblue"]
     if knots <= 15: return colors["green"]
@@ -90,17 +88,21 @@ if data and 'hourly' in data:
         hovertemplate='%{x}:00<br>%{customdata:.1f} kn<extra></extra>'
     ))
 
-    prev_date = None
-    for i, row in day_df.iterrows():
-        current_date = row['time'].date()
-        if prev_date is not None and current_date != prev_date:
-            fig_top.add_vline(x=i - 0.5, line_width=8, line_color="white")
-        if current_date != prev_date:
-            fig_top.add_annotation(
-                x=i, y=1.15, text=f"<b>{row['time'].strftime('%a')}</b>",
-                showarrow=False, font=dict(size=11), xanchor="left"
-            )
-        prev_date = current_date
+    # Center Day Text (Mon 11 format)
+    for d_date in day_df['date_only'].unique():
+        group = day_df[day_df['date_only'] == d_date]
+        center_idx = group.index[len(group)//2]
+        # Format date as 'Mon 11' (No leading zero)
+        date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
+        
+        fig_top.add_annotation(
+            x=center_idx, y=1.15, text=f"<b>{date_label}</b>",
+            showarrow=False, font=dict(size=11), xanchor="center"
+        )
+        # Day Separator
+        last_idx = group.index[-1]
+        if last_idx < len(day_df) - 1:
+            fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
 
     fig_top.update_layout(
         height=120, margin=dict(t=30, b=5, l=5, r=5),
@@ -113,41 +115,34 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
-    # Heatstrip row
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
                                 marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
-    # Line graph row with ultra-dimmed night lines
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         is_segment_night = p1['is_night'] and p2['is_night']
-        
-        # Lowered opacity to 0.1 and width to 1 for a "ghost" effect
         line_opacity = 0.1 if is_segment_night else 1.0
         line_width = 1.0 if is_segment_night else 2.5
-        
         fig_bot.add_trace(go.Scatter(
             x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], 
-            mode='lines', 
-            line=dict(color=get_color(p1['wind'], opacity=line_opacity), width=line_width), 
+            mode='lines', line=dict(color=get_color(p1['wind'], opacity=line_opacity), width=line_width), 
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
+        # Format date as 'Mon' (No number)
         fig_bot.add_annotation(
             x=midday, y=1.02, yref="y1", 
-            text=f"<b>{midday.strftime('%a %d')}</b>",
+            text=f"<b>{midday.strftime('%a')}</b>",
             showarrow=False, font=dict(size=9), yanchor="bottom"
         )
-        
         if i < len(sun_data) - 1:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
             mid_night = sunset + (sunrise_next - sunset) / 2
-            # Lightened the shading overlay to 0.05
             fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.05, line_width=0, row=2, col=1)
             fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
