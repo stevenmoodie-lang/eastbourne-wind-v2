@@ -12,7 +12,9 @@ st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 st.markdown("""
     <style>
         .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
-        h1 { font-size: 1.5rem !important; margin-bottom: 0px !important; }
+        h1 { font-size: 1.6rem !important; margin-bottom: 0px !important; display: inline; }
+        .subtitle { font-size: 0.9rem; color: #666; margin-bottom: 10px; }
+        .stButton button { margin-top: 5px; padding: 2px 10px; height: 30px; }
         .stPlotlyChart { margin-bottom: 5px !important; } 
     </style>
 """, unsafe_allow_html=True)
@@ -52,10 +54,6 @@ def get_weather_data(lat, lon, days):
     return r.json() if r.status_code == 200 else None
 
 # --- SIDEBAR ---
-if st.sidebar.button("🔄 Refresh Data"):
-    st.cache_data.clear()
-    st.rerun()
-
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
 forecast_range = st.sidebar.radio("Range", ["7 Days", "3 Days"], index=0)
 days_to_fetch = 7 if forecast_range == "7 Days" else 3
@@ -79,6 +77,17 @@ if data and 'hourly' in data:
     })
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
+
+    # --- TOP HEADER SECTION ---
+    idx_now = (df['time'] - now_nz).abs().idxmin()
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
+        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> ({coords['lat']}, {coords['lon']})</div>", unsafe_allow_html=True)
+    with col2:
+        if st.button("🔄 Refresh"):
+            st.cache_data.clear()
+            st.rerun()
 
     # --- 1. TOP GRAPH: DAYLIGHT FOCUS ---
     day_df = df[~df['is_night']].copy().reset_index(drop=True)
@@ -110,10 +119,10 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
-    # Timeline row (Heatstrip) - Darker night grey
+    # Timeline row (Heatstrip) - Deeper Grey
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
-                                marker_color="rgb(210,210,210)" if df['is_night'][i] else get_color(df['wind'][i]), 
+                                marker_color="rgb(200,200,200)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
     # Line graph row
@@ -138,9 +147,6 @@ if data and 'hourly' in data:
             
             fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
                                    showarrow=False, yshift=12, font=dict(size=10, color="black"), row=2, col=1)
-            if peak['time'] != valley['time']:
-                fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
-                                       showarrow=False, yshift=-12, font=dict(size=10, color="gray"), row=2, col=1)
             
             fig_bot.add_annotation(x=midday, y=0.5, yref="y1", text=f"<b>{avg_knots} kn</b>", 
                                    showarrow=False, font=dict(size=10, color="white"), row=1, col=1)
@@ -152,11 +158,9 @@ if data and 'hourly' in data:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
             mid_night = sunset + (sunrise_next - sunset) / 2
-            # Darkened the rectangular night shades behind the graph
-            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="black", opacity=0.08, line_width=0, row=2, col=1)
+            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="black", opacity=0.1, line_width=0, row=2, col=1)
             fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
-    idx_now = (df['time'] - now_nz).abs().idxmin()
     fig_bot.add_vline(x=df.loc[idx_now, 'time'], line_width=1.5, line_dash="dot", line_color="green")
     
     fig_bot.update_layout(
@@ -168,8 +172,6 @@ if data and 'hourly' in data:
         bargap=0
     )
 
-    # --- RENDER ---
-    st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
     st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
