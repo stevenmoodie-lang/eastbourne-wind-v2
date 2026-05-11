@@ -106,7 +106,7 @@ if data and 'hourly' in data:
             st.cache_data.clear()
             st.rerun()
 
-    # --- TOP SUMMARY HEATSTRIP ---
+    # --- 1. TOP SUMMARY HEATSTRIP ---
     day_df = df[~df['is_night']].copy()
     daily_summary = day_df.groupby('date_only').agg({'wind': 'mean', 'dir': lambda x: x.mode()[0]}).reset_index()
     
@@ -131,13 +131,13 @@ if data and 'hourly' in data:
     )
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- DETAILED GRAPHS (COMPRESSED HEIGHTS) ---
+    # --- 2. DETAILED GRAPHS (ULTRA COMPRESSED) ---
     fig_bot = make_subplots(
-        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06, 
-        row_heights=[0.08, 0.52, 0.4] # Reduced top strip and shifted wind balance
+        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, 
+        row_heights=[0.05, 0.55, 0.4] # Ultra-slim top heatstrip
     )
     
-    # 3-segment Heatblocks (Row 1)
+    # 3-segment Heatblocks (Row 1) - Slimmer with smaller arrows
     heat_blocks = []
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
@@ -163,7 +163,8 @@ if data and 'hourly' in data:
             x=[mid_point], y=[1], width=(b['end'] - b['time']).total_seconds() * 1000, 
             marker_color=block_color, showlegend=False, hoverinfo='none'
         ), row=1, col=1)
-        fig_bot.add_annotation(x=mid_point, y=0.5, yref="y1", text="➤", textangle=b['dir']-90, showarrow=False, font=dict(size=12, color="white" if not b['is_night'] else "rgba(255,255,255,0.1)"), row=1, col=1)
+        # Smaller arrow for slim strip
+        fig_bot.add_annotation(x=mid_point, y=0.5, yref="y1", text="➤", textangle=b['dir']-90, showarrow=False, font=dict(size=10, color="white" if not b['is_night'] else "rgba(255,255,255,0.1)"), row=1, col=1)
 
     # Wind Line (Row 2)
     for i in range(len(df)-1):
@@ -175,7 +176,7 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Mobile-Optimized Balanced Labels (Smaller Arrow)
+    # Wind Peak/Valley Labels with Arrows
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
@@ -219,7 +220,7 @@ if data and 'hourly' in data:
     tick_text = [f"<b>{pd.to_datetime(d).strftime('%a')}</b>" for d in df['date_only'].unique()]
 
     fig_bot.update_layout(
-        height=540, # Reduced overall height for mobile
+        height=500, # Further reduced overall height
         margin=dict(t=10, b=10, l=5, r=5), template="plotly_dark", 
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False, zeroline=False),
