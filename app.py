@@ -25,7 +25,7 @@ STATIONS = {
 
 def get_color(knots):
     if knots < 5: return "lightblue"
-    if knots <= 10: return "dodgerblue"  # Lighter than RoyalBlue, punchier than SkyBlue
+    if knots <= 10: return "dodgerblue"
     if knots <= 15: return "green"
     if knots <= 19: return "yellow"
     if knots <= 28: return "red"
@@ -93,9 +93,9 @@ if data and 'hourly' in data:
         prev_date = current_date
 
     fig_top.update_layout(
-        height=140, margin=dict(t=30, b=10, l=5, r=5),
+        height=120, margin=dict(t=30, b=5, l=5, r=5), # Reduced height and bottom margin
         template="plotly_white", bargap=0,
-        xaxis=dict(type='category', tickangle=0, tickfont=dict(size=7), dtick=4),
+        xaxis=dict(type='category', showticklabels=False), # Removed day/time labels
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False),
         title=dict(text="<b>Daylight Focus</b>", font=dict(size=11), x=0.01)
     )
@@ -103,22 +103,18 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
-    # Heatstrip row
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
                                 marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
-    # Line graph row
     for i in range(len(df)-1):
         fig_bot.add_trace(go.Scatter(x=[df['time'][i], df['time'][i+1]], y=[df['wind'][i], df['wind'][i+1]], 
                                      mode='lines', line=dict(color=get_color(df['wind'][i]), width=2.5), 
                                      showlegend=False, hoverinfo='none'), row=2, col=1)
 
-    # Day Annotations, Night Shading, and Moons
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
-        
         fig_bot.add_annotation(
             x=midday, y=1.02, yref="y1", 
             text=f"<b>{midday.strftime('%a %d')}</b>",
@@ -129,7 +125,6 @@ if data and 'hourly' in data:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
             mid_night = sunset + (sunrise_next - sunset) / 2
-            
             fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1)
             fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
