@@ -14,7 +14,6 @@ st.set_page_config(page_title="Eastbourne Wind & Tide", layout="wide")
 st.markdown("""
     <style>
         .stApp { background-color: #3d5a73; color: #f8f9fa; }
-        /* Increased padding-top to prevent title cutoff */
         .block-container { padding-top: 2.5rem; padding-bottom: 0rem; }
         h1 { font-size: 1.7rem !important; margin-bottom: 5px !important; color: #ffffff !important; line-height: 1.2; }
         .subtitle { font-size: 0.85rem; color: #d1d9e0; margin-bottom: 10px; }
@@ -115,10 +114,15 @@ if data and 'hourly' in data:
     fig_top.update_layout(height=85, margin=dict(t=25, b=0, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0.05, xaxis=dict(showticklabels=False, showgrid=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False))
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- MAIN GRAPHS (Refined Spacing) ---
-    fig_bot = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.08, 0.52, 0.40])
+    # --- MAIN GRAPHS (Day Labels Fixed) ---
+    fig_bot = make_subplots(
+        rows=3, cols=1, 
+        shared_xaxes=False, # Disable auto-sharing to prevent hidden labels
+        vertical_spacing=0.12, # Increase gap between wind and tide
+        row_heights=[0.06, 0.54, 0.40]
+    )
     
-    # Row 1: Direction Heatstrip
+    # Heatstrip
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
         for s in range(3):
@@ -129,12 +133,12 @@ if data and 'hourly' in data:
                 fig_bot.add_trace(go.Bar(x=[t0+(t1-t0)/2], y=[1], width=(t1-t0).total_seconds()*1000, marker_color=get_color(w_mean), showlegend=False, hoverinfo='none'), row=1, col=1)
                 fig_bot.add_annotation(x=t0+(t1-t0)/2, y=0.5, text="➤", textangle=d_mean-90, showarrow=False, font=dict(size=9, color="white"), row=1, col=1)
 
-    # Row 2: Wind Line Chart
+    # Wind Line Chart
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         fig_bot.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], mode='lines', line=dict(color=get_color(p1['wind'], opacity=0.2 if p1['is_night'] else 1.0), width=2), showlegend=False, hoverinfo='none'), row=2, col=1)
 
-    # Labels for Wind Graph
+    # Labels
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
@@ -145,7 +149,7 @@ if data and 'hourly' in data:
             fig_bot.add_annotation(x=v['time'], y=v['wind'], text=f"<b>{round(v['wind'])}</b>", showarrow=False, yshift=-10, xshift=-7, font=dict(size=9, color="#d1d9e0"), row=2, col=1)
             fig_bot.add_annotation(x=v['time'], y=v['wind'], text="➤", textangle=v['dir']-90, showarrow=False, yshift=-10, xshift=7, font=dict(size=7, color="#d1d9e0"), row=2, col=1)
 
-    # Row 3: Tide Silhouette
+    # Tide
     fig_bot.add_trace(go.Scatter(x=tide_df['time'], y=tide_df['height'], fill='tozeroy', mode='lines', line=dict(color='#5dade2', width=1.2), fillcolor='rgba(93, 173, 226, 0.15)', showlegend=False, hoverinfo='none'), row=3, col=1)
     
     t_vals = tide_df['height'].values
@@ -159,7 +163,7 @@ if data and 'hourly' in data:
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.3, line_width=0, row="all")
 
-    # Day labels centered in daylight
+    # Day labels centered
     tick_vals = []
     tick_text = []
     for i in range(len(sun_data)):
@@ -167,13 +171,23 @@ if data and 'hourly' in data:
         tick_vals.append(mid_day)
         tick_text.append(f"<b>{pd.to_datetime(sun_data.iloc[i]['date']).strftime('%a')}</b>")
 
+    # Explicit axis config to show day labels on row 2
     fig_bot.update_layout(
-        height=540, margin=dict(t=5, b=5, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=560, margin=dict(t=5, b=5, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        xaxis1=dict(showticklabels=False, matches='x2'),
+        xaxis2=dict(
+            showticklabels=True, 
+            tickmode='array', 
+            tickvals=tick_vals, 
+            ticktext=tick_text, 
+            tickfont=dict(size=12, color="white"), 
+            showgrid=False,
+            anchor='y2'
+        ),
+        xaxis3=dict(showticklabels=False, matches='x2'),
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False),
         yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.03)"),
-        yaxis3=dict(showticklabels=False, showgrid=False, range=[0, 2.2]),
-        xaxis2=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, tickfont=dict(size=11, color="white"), showgrid=False),
-        xaxis3=dict(showticklabels=False, showgrid=False)
+        yaxis3=dict(showticklabels=False, showgrid=False, range=[0, 2.2])
     )
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
 else:
