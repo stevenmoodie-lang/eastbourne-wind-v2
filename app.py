@@ -94,8 +94,12 @@ try:
     # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # NIGHT SHADING: Direct Layout Shapes (Fixed coordinate system)
+    # NIGHT SHADING: Full range coverage
     night_shapes = []
+    # Handle the very first night if data starts before the first sunrise
+    if crop_start > df_hourly['time'].min():
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=df_hourly['time'].min(), x1=crop_start, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
+    
     for i in range(len(df_sun) - 1):
         night_shapes.append(dict(
             type="rect", xref="x", yref="paper",
@@ -110,7 +114,7 @@ try:
         alpha = 1.0 if check_daylight(midpoint, df_sun) else 0.25
         fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=1.8), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
 
-    # Tide Traces: Single Continuous Trace with fill
+    # Tide Traces
     fig_main.add_trace(go.Scatter(
         x=df_tide['time'], y=df_tide['height'],
         line=dict(color="rgba(255,255,255,0.7)", width=1.3),
@@ -133,13 +137,13 @@ try:
                 fig_main.add_annotation(x=f['time'], y=f['speed']+(off/2), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
                 fig_main.add_annotation(x=f['time'], y=f['speed']+off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    # Tide Peak Times
+    # Tide Peak Times (Improved day/night visibility)
     for i in range(1, len(df_tide)-1):
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
             t = df_tide.iloc[i]
             is_day = check_daylight(t['time'], df_sun)
-            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8, color=f"rgba(255,255,255,{'1.0' if is_day else '0.25'})"), yshift=10 if c > p else -10, row=2, col=1)
+            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8.5, color="white" if is_day else "rgba(255,255,255,0.15)"), yshift=10 if c > p else -10, row=2, col=1)
 
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
     fig_main.update_layout(
