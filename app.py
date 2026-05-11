@@ -48,19 +48,21 @@ def get_weather_data():
         "latitude": -41.405, "longitude": 174.867, 
         "hourly": ["wind_speed_10m", "wind_direction_10m"], 
         "daily": ["sunrise", "sunset"], 
+        "past_days": 1, # Ensures we have sun data for the current day's morning
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
     r = requests.get(url, params=params).json()
     def to_nz_naive(raw): return pd.to_datetime(raw).tz_localize(None)
     df_h = pd.DataFrame({"time": to_nz_naive(r["hourly"]["time"]), "speed": r["hourly"]["wind_speed_10m"], "dir": r["hourly"]["wind_direction_10m"]})
-    df_s = pd.DataFrame({"date": pd.to_datetime(r["daily"]["time"]).date, "sunrise": to_nz_naive(r["daily"]["sunrise"]), "sunset": to_nz_naive(r["daily"]["sunset"])})
+    df_s = pd.DataFrame({"date": pd.to_datetime(r["daily"]["time"]).dt.date, "sunrise": to_nz_naive(r["daily"]["sunrise"]), "sunset": to_nz_naive(r["daily"]["sunset"])})
     t_range = pd.date_range(start=df_h['time'].min(), end=df_h['time'].max(), freq='15min')
     df_tide = pd.DataFrame({"time": t_range, "height": [calculate_wellington_tide(t) for t in t_range]})
     return df_h, df_s, df_tide
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    now = datetime.datetime.now().replace(microsecond=0)
+    # Correct NZ Time for the "Now" line
+    now = (datetime.datetime.utcnow() + datetime.timedelta(hours=12)).replace(microsecond=0)
     max_wind = df_hourly['speed'].max()
     all_time_min, all_time_max = df_hourly['time'].min(), df_hourly['time'].max()
 
@@ -86,26 +88,23 @@ try:
                 fig_ribbon.add_annotation(x=x_id, y=-0.3, text=f"<b>{round(d['speed'].mean())}</b>", showarrow=False, font=dict(size=7, color="white"))
         fig_ribbon.add_trace(go.Bar(x=[f"{day['date']}_sp"], y=[1], marker=dict(color="rgba(0,0,0,0)", line=dict(width=0)), showlegend=False))
 
-    fig_ribbon.update_layout(height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0, xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], side="top", tickfont=dict(size=9, color="white")), yaxis=dict(visible=False, fixedrange=True))
+    fig_ribbon.update_layout(height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0, xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], ticktext=[f"<b>{pd.to_datetime(d).strftime('%a')}</b>" for d in df_sun['date']], side="top", tickfont=dict(size=9, color="white")), yaxis=dict(visible=False, fixedrange=True))
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
     # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # RELIABLE NIGHT SHADING: Full Scan
+    # GUARANTEED NIGHT SHADING: Draw blocks for every day
     night_shapes = []
-    check_times = pd.date_range(all_time_min, all_time_max, freq='1h')
-    current_night_start = None
-
-    for t in check_times:
-        if not check_daylight(t, df_sun):
-            if current_night_start is None: current_night_start = t
-        else:
-            if current_night_start is not None:
-                night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_night_start, x1=t, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
-                current_night_start = None
-    if current_night_start:
-        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_night_start, x1=all_time_max, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
+    for _, row in df_sun.iterrows():
+        d_start = pd.Timestamp(row['date'])
+        d_end = d_start + pd.Timedelta(days=1)
+        
+        # Morning block: Midnight to Sunrise
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=d_start, x1=row['sunrise'], y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.4)", layer="below", line_width=0))
+        
+        # Evening block: Sunset to Midnight
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=row['sunset'], x1=d_end, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.4)", layer="below", line_width=0))
 
     # Wind Lines
     for i in range(len(df_hourly)-1):
@@ -120,7 +119,7 @@ try:
     # UI Labels
     for _, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
-        fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{day['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.7)"), row=1, col=1)
+        fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{pd.to_datetime(day['date']).strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.7)"), row=1, col=1)
         fig_main.add_annotation(x=day['sunrise'], y=-4.5, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
         fig_main.add_annotation(x=day['sunset'], y=-4.5, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
 
