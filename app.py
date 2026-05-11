@@ -34,8 +34,7 @@ st.markdown("""
 # --- SETTINGS ---
 LAT, LON = -41.291, 174.894
 
-def get_color(knots, is_night=False):
-    alpha = "0.1" if is_night else "1.0"
+def get_color(knots, alpha=1.0):
     if knots <= 6: return f"rgba(173, 216, 230, {alpha})"    
     if knots <= 11: return f"rgba(135, 206, 250, {alpha})"   
     if knots <= 15: return f"rgba(0, 128, 0, {alpha})"       
@@ -93,7 +92,6 @@ try:
             fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color="rgba(0,0,0,0)", showlegend=False))
             continue
         fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False))
-        # Arrow points TO heading
         heading = (s['dir'] + 180) % 360
         y_pos = 0.5 if (75 < s['dir'] < 105 or 255 < s['dir'] < 285) else (0.35 if 105 <= s['dir'] <= 255 else 0.75)
         fig_ribbon.add_annotation(x=s['x_id'], y=y_pos, text="➤", showarrow=False, textangle=heading-90, font=dict(size=14, color="white"))
@@ -111,19 +109,30 @@ try:
     # --- 2. THE WIND & TIDE DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.35, 0.15])
 
-    # Plot wind segments with night-dimming logic fixed to sunrise/sunset
+    # Precise Line Coloring (Splitting at Sunrise/Sunset)
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
+        sr, ss = day_info['sunrise'], day_info['sunset']
         
-        # SYNCED: Exactly the same condition as the VRECT shading
-        is_night = p1['time'] < day_info['sunrise'] or p1['time'] > day_info['sunset']
+        # Determine segments to plot (splitting if the hour spans a sunrise/sunset)
+        transition_points = sorted([t for t in [sr, ss] if p1['time'] < t < p2['time']])
+        current_times = [p1['time']] + transition_points + [p2['time']]
         
-        fig_main.add_trace(go.Scatter(
-            x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']],
-            line=dict(color=get_color(p1['speed'], is_night), width=3 if not is_night else 1),
-            mode='lines', showlegend=False, hoverinfo='skip'
-        ), row=1, col=1)
+        for j in range(len(current_times)-1):
+            t_start, t_end = current_times[j], current_times[j+1]
+            # Speed/Dir interpolated (simple linear for speed)
+            frac = (t_start - p1['time']) / (p2['time'] - p1['time']) if p2['time'] != p1['time'] else 0
+            interp_speed = p1['speed'] + frac * (p2['speed'] - p1['speed'])
+            
+            is_night = t_start < sr or t_start >= ss
+            alpha = 0.08 if is_night else 1.0
+            
+            fig_main.add_trace(go.Scatter(
+                x=[t_start, t_end], y=[interp_speed, interp_speed + (p2['speed']-p1['speed']) * ((t_end-t_start)/(p2['time']-p1['time']))],
+                line=dict(color=get_color(interp_speed, alpha), width=3 if not is_night else 1),
+                mode='lines', showlegend=False, hoverinfo='skip'
+            ), row=1, col=1)
 
     # Daytime Max/Min Labels with individual rotation
     for _, day_sun in df_sun.iterrows():
@@ -135,12 +144,13 @@ try:
                                  (day_data.loc[day_data['speed'].idxmin()], -3.0)]:
                 heading = (func['dir'] + 180) % 360
                 
-                # ROTATION FIX: Using Plotly's internal rotation for the arrow icon separately
+                # Plot the Arrow
                 fig_main.add_annotation(
                     x=func['time'], y=func['speed'] + (offset/2), 
                     text="➤", textangle=heading-90, showarrow=False,
                     font=dict(size=14, color=get_color(func['speed'])), row=1, col=1
                 )
+                # Plot the Number
                 fig_main.add_annotation(
                     x=func['time'], y=func['speed'] + offset, 
                     text=f"<b>{round(func['speed'])}</b>", 
@@ -148,11 +158,11 @@ try:
                 )
 
     # Tide Section
-    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)', line=dict(color='#00d4ff', width=2), showlegend=False), row=2, col=1)
+    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.05)', line=dict(color='#00d4ff', width=2), showlegend=False), row=2, col=1)
     
     # Night Shading & Now Line
     for i in range(len(df_sun)-1):
-        fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.45)", layer="below", line_width=0)
+        fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.5)", layer="below", line_width=0)
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
 
     fig_main.update_layout(
@@ -164,7 +174,7 @@ try:
             ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], 
             tickfont=dict(size=13, color="white"), fixedrange=True
         ),
-        xaxis2=dict(showgrid=False, tickformat="%a", dtick=86400000.0, tickfont=dict(size=10, color="rgba(255,255,255,0.4)"), fixedrange=True),
+        xaxis2=dict(showgrid=False, tickformat="%a", dtick=86400000.0, tickfont=dict(size=10, color="rgba(255,255,255,0.2)"), fixedrange=True),
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True),
         yaxis2=dict(visible=False, fixedrange=True)
     )
