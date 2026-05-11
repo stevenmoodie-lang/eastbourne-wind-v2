@@ -40,7 +40,8 @@ unit = st.sidebar.radio("Units", ["km/h", "knots"])
 coords = STATIONS[selection]
 data = get_weather_data(coords["lat"], coords["lon"])
 nz_tz = pytz.timezone('Pacific/Auckland')
-now_nz = datetime.now(nz_tz)
+# Get current time in NZ, then make it naive for comparison with Open-Meteo
+now_nz = datetime.now(nz_tz).replace(tzinfo=None)
 
 if data and 'hourly' in data:
     df = pd.DataFrame({
@@ -51,10 +52,10 @@ if data and 'hourly' in data:
     if unit == "knots":
         df['wind'] *= 0.539957
 
-    # Get Sunrise/Sunset
+    # --- THE FIX IS HERE ---
     daily = data['daily']
     sun_data = pd.DataFrame({
-        'date': pd.to_datetime(daily['time']).date(),
+        'date': pd.to_datetime(daily['time']).dt.date, # Added .dt here
         'sunrise': pd.to_datetime(daily['sunrise']),
         'sunset': pd.to_datetime(daily['sunset'])
     })
@@ -63,8 +64,8 @@ if data and 'hourly' in data:
     plot_df = df.copy()
     
     if hide_night:
-        plot_df['date'] = plot_df['time'].dt.date
-        plot_df = plot_df.merge(sun_data, on='date')
+        plot_df['date_only'] = plot_df['time'].dt.date
+        plot_df = plot_df.merge(sun_data, left_on='date_only', right_on='date')
         plot_df = plot_df[(plot_df['time'] >= plot_df['sunrise']) & (plot_df['time'] <= plot_df['sunset'])]
 
     # --- PLOTTING ---
@@ -82,17 +83,15 @@ if data and 'hourly' in data:
 
     # 2. Add Vertical Day Dividers (Only if night is hidden)
     else:
-        # Find the first record of each day in the filtered set
         day_starts = plot_df.groupby(plot_df['time'].dt.date).first()['time']
         for start_time in day_starts:
             fig.add_vline(x=start_time, line_width=1, line_dash="solid", line_color="rgba(0,0,0,0.3)")
 
     # 3. Add Current Time Line
-    # We find the hour in the plot closest to 'now'
     if not plot_df.empty:
-        # Convert now_nz to naive for comparison with Open-Meteo's format
-        now_naive = now_nz.replace(tzinfo=None)
-        closest_time = plot_df.iloc[(plot_df['time'] - now_naive).abs().argsort()[:1]]['time'].iloc[0]
+        # Finding the closest timestamp in our data to "Now"
+        idx = (plot_df['time'] - now_nz).abs().idxmin()
+        closest_time = plot_df.loc[idx, 'time']
         
         fig.add_vline(
             x=closest_time, 
@@ -103,7 +102,7 @@ if data and 'hourly' in data:
             annotation_position="top left"
         )
 
-    # 4. Add Wind Line (Gusts hidden as requested)
+    # 4. Add Wind Line
     fig.add_trace(go.Scatter(
         x=plot_df['time'], y=plot_df['wind'], name=f'Wind ({unit})',
         line=dict(color='#007BFF', width=3),
@@ -122,8 +121,7 @@ if data and 'hourly' in data:
             title=""
         ),
         yaxis=dict(title=unit),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=20, r=20, t=60, b=20)
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
 
     st.title(f"🌬️ {selection} Tracker")
@@ -131,10 +129,10 @@ if data and 'hourly' in data:
 
     # Summary Metrics
     m1, m2 = st.columns(2)
-    # Get actual current wind from the closest time slice
-    current_val = plot_df.iloc[(plot_df['time'] - now_naive).abs().argsort()[:1]]['wind'].iloc[0]
-    m1.metric("Estimated Current Wind", f"{current_val:.1f} {unit}")
-    m2.metric("Station Lat/Lon", f"{coords['lat']}, {coords['lon']}")
+    # Using the same index we found for the "Now" line
+    current_val = plot_df.loc[idx, 'wind']
+    m1.metric("Current Wind (Forecast)", f"{current_val:.1f} {unit}")
+    m2.metric("Station", selection)
 
 else:
     st.error("Could not load weather data.")
