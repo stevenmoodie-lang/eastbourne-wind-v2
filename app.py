@@ -23,7 +23,7 @@ def get_color(knots):
     if knots <= 28: return "red"
     return "darkred"
 
-def get_weather_data(lat, lon):
+def get_weather_data(lat, lon, days):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat, "longitude": lon,
@@ -31,7 +31,7 @@ def get_weather_data(lat, lon):
         "daily": "sunrise,sunset",
         "timezone": "Pacific/Auckland",
         "wind_speed_unit": "kmh",
-        "forecast_days": 3
+        "forecast_days": days
     }
     try:
         response = requests.get(url, params=params, timeout=10)
@@ -42,10 +42,12 @@ def get_weather_data(lat, lon):
 # --- SIDEBAR ---
 st.sidebar.title("⚙️ Settings")
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
+forecast_range = st.sidebar.radio("Forecast Range", ["3 Days", "7 Days"], index=0)
+days_to_fetch = 3 if forecast_range == "3 Days" else 7
 
 # --- DATA PROCESSING ---
 coords = STATIONS[selection]
-data = get_weather_data(coords["lat"], coords["lon"])
+data = get_weather_data(coords["lat"], coords["lon"], days_to_fetch)
 nz_tz = pytz.timezone('Pacific/Auckland')
 now_nz = datetime.now(nz_tz).replace(tzinfo=None)
 
@@ -68,7 +70,6 @@ if data and 'hourly' in data:
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
     # --- PLOTTING ---
-    # Back to 2 rows: Heatstrip (Top) and Line (Bottom)
     fig = make_subplots(
         rows=2, cols=1, 
         shared_xaxes=True, 
@@ -103,18 +104,19 @@ if data and 'hourly' in data:
         name="Wind", showlegend=False
     ), row=2, col=1)
 
-    # 3. ANNOTATIONS (Days and Moons)
+    # 3. ANNOTATIONS & SHADING
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
         
-        # Day Label at the top of the Heatstrip
+        # Day Label (Responsive size)
+        label_size = 14 if days_to_fetch == 3 else 11
         fig.add_annotation(
             x=midday, y=1.2, yref="y1",
             text=f"<b>{midday.strftime('%a %d %b')}</b>",
-            showarrow=False, font=dict(size=14)
+            showarrow=False, font=dict(size=label_size)
         )
         
-        # Moon icons between sunsets and sunrises
+        # Moon icons
         if i < len(sun_data) - 1:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
@@ -122,13 +124,11 @@ if data and 'hourly' in data:
             
             fig.add_annotation(
                 x=mid_night, y=0.5, yref="y1",
-                text="🌙", showarrow=False, font=dict(size=20)
+                text="🌙", showarrow=False, font=dict(size=18 if days_to_fetch == 3 else 14)
             )
-
-        # Shading for the main graph
-        if i < len(sun_data) - 1:
+            # V-Rect Shading
             fig.add_vrect(
-                x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1],
+                x0=sunset, x1=sunrise_next,
                 fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1
             )
 
@@ -148,7 +148,7 @@ if data and 'hourly' in data:
         bargap=0
     )
 
-    st.title(f"🌬️ {selection} Tracker")
+    st.title(f"🌬️ {selection} Tracker ({forecast_range})")
     st.plotly_chart(fig, use_container_width=True)
     st.metric("Current Forecasted Wind", f"{df.loc[idx_now, 'wind']:.1f} Knots")
 
