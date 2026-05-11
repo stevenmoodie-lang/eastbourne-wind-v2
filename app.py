@@ -7,7 +7,7 @@ from datetime import datetime, time
 import pytz
 
 # --- PAGE CONFIG & CSS ---
-st.set_page_config(page_title="Wind Tracker", layout="wide")
+st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
 st.markdown("""
     <style>
@@ -105,10 +105,10 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
-    # Timeline row (Heatstrip)
+    # Timeline row (Heatstrip) - Darker Grey for night
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
-                                marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
+                                marker_color="rgb(225,225,225)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
     # Line graph row
@@ -132,15 +132,12 @@ if data and 'hourly' in data:
             avg_knots = round(day_block['wind'].mean())
             midday = datetime.combine(d_date, time(12, 0))
             
-            # Label Max
             fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
                                    showarrow=False, yshift=12, font=dict(size=10, color="black"), row=2, col=1)
-            # Label Min
             if peak['time'] != valley['time']:
                 fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
                                        showarrow=False, yshift=-12, font=dict(size=10, color="gray"), row=2, col=1)
             
-            # Daily Average with "kn" suffix
             fig_bot.add_annotation(x=midday, y=0.5, yref="y1", text=f"<b>{avg_knots} kn</b>", 
                                    showarrow=False, font=dict(size=10, color="white"), row=1, col=1)
 
@@ -167,7 +164,7 @@ if data and 'hourly' in data:
     )
 
     # --- RENDER ---
-    st.title(f"🌬️ {selection}: {round(df.loc[idx_now, 'wind'])} kn")
+    st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
     st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
