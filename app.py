@@ -66,7 +66,6 @@ def get_weather_data(lat, lon, days):
 @st.cache_data(ttl=3600)
 def get_tide_data(days):
     start_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    # Higher frequency for smoother curve and peak detection
     times = pd.date_range(start=start_time, periods=days*24*12, freq='5min')
     tide_heights = [1.0 + 0.6 * np.sin((t.timestamp() / 22357) * np.pi) for t in times]
     return pd.DataFrame({'time': times, 'height': tide_heights})
@@ -134,15 +133,13 @@ if data and 'hourly' in data:
     )
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. DETAILED GRAPHS (Segments, Wind, Tide) ---
+    # --- 2. DETAILED GRAPHS ---
     fig_bot = make_subplots(
-        rows=3, cols=1, 
-        shared_xaxes=True, 
-        vertical_spacing=0.08, 
+        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.08, 
         row_heights=[0.1, 0.6, 0.3]
     )
     
-    # Detailed Segment Bars (Row 1)
+    # Detailed 3-segment Bars
     heat_blocks = []
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
@@ -164,13 +161,13 @@ if data and 'hourly' in data:
     for b in heat_blocks:
         block_color = "#2c3e50" if b['is_night'] else get_color(b['wind'])
         mid_point = b['time'] + (b['end'] - b['time']) / 2
-        width_ms = (b['end'] - b['time']).total_seconds() * 1000
         fig_bot.add_trace(go.Bar(
-            x=[mid_point], y=[1], width=width_ms, marker_color=block_color, showlegend=False, hoverinfo='none'
+            x=[mid_point], y=[1], width=(b['end'] - b['time']).total_seconds() * 1000, 
+            marker_color=block_color, showlegend=False, hoverinfo='none'
         ), row=1, col=1)
         fig_bot.add_annotation(x=mid_point, y=0.5, yref="y1", text="➤", textangle=b['dir']-90, showarrow=False, font=dict(size=14, color="white" if not b['is_night'] else "rgba(255,255,255,0.1)"), row=1, col=1)
 
-    # Wind Speed Line (Row 2)
+    # Wind Line
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         op = 0.2 if (p1['is_night'] and p2['is_night']) else 1.0
@@ -180,59 +177,54 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Tide Silhouette (Row 3)
-    fig_bot.add_trace(go.Scatter(
-        x=tide_df['time'], y=tide_df['height'],
-        fill='tozeroy', mode='lines',
-        line=dict(color='#5dade2', width=1.5),
-        fillcolor='rgba(93, 173, 226, 0.15)',
-        showlegend=False, hoverinfo='none'
-    ), row=3, col=1)
-
-    # TIDE PEAK DETECTION (High/Low)
-    # We find where height is max/min compared to neighbors
-    tide_vals = tide_df['height'].values
-    for i in range(1, len(tide_vals) - 1):
-        if tide_vals[i] > tide_vals[i-1] and tide_vals[i] > tide_vals[i+1]: # High Tide
-            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), 
-                                   showarrow=False, yshift=8, font=dict(size=9, color="#5dade2"), row=3, col=1)
-        if tide_vals[i] < tide_vals[i-1] and tide_vals[i] < tide_vals[i+1]: # Low Tide
-            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), 
-                                   showarrow=False, yshift=-8, font=dict(size=9, color="#d1d9e0"), row=3, col=1)
-
-    # Wind Peak/Valley labels
+    # Wind Peak/Valley Labels with Arrows
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
-            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
+            fig_bot.add_annotation(
+                x=peak['time'], y=peak['wind'], 
+                text=f"<b>{round(peak['wind'])} kn</b> <span style='font-family: Arial;'>➤</span>", 
+                textangle=peak['dir']-90, # This applies to the text block, so we use a span for the arrow if needed, 
+                # but it's cleaner to use a dedicated arrow annotation or symbol
+                showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1
+            )
+            # Re-adding arrow for peak using a separate annotation for rotation control
+            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text="➤", textangle=peak['dir']-90, showarrow=False, xshift=28, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
+            
             valley = day_block.loc[day_block['wind'].idxmin()]
-            fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
+            fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])} kn</b>", showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
+            fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text="➤", textangle=valley['dir']-90, showarrow=False, xshift=28, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
 
-    # Night Shading
+    # Tide Silhouette with High/Low labels
+    fig_bot.add_trace(go.Scatter(
+        x=tide_df['time'], y=tide_df['height'], fill='tozeroy', mode='lines',
+        line=dict(color='#5dade2', width=1.5), fillcolor='rgba(93, 173, 226, 0.15)',
+        showlegend=False, hoverinfo='none'
+    ), row=3, col=1)
+
+    tide_vals = tide_df['height'].values
+    for i in range(1, len(tide_vals) - 1):
+        if tide_vals[i] > tide_vals[i-1] and tide_vals[i] > tide_vals[i+1]:
+            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), showarrow=False, yshift=8, font=dict(size=9, color="#5dade2"), row=3, col=1)
+        if tide_vals[i] < tide_vals[i-1] and tide_vals[i] < tide_vals[i+1]:
+            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), showarrow=False, yshift=-8, font=dict(size=9, color="#d1d9e0"), row=3, col=1)
+
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.35, line_width=0, row="all")
 
-    # Time Labels Config (Matching top strip font style)
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
     tick_text = [f"<b>{pd.to_datetime(d).strftime('%a')}</b>" for d in df['date_only'].unique()]
 
     fig_bot.update_layout(
-        height=620, margin=dict(t=10, b=10, l=5, r=5), 
-        template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=620, margin=dict(t=10, b=10, l=5, r=5), template="plotly_dark", 
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False, zeroline=False),
         yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.05)", zeroline=False),
         yaxis3=dict(showticklabels=False, showgrid=False, zeroline=False, range=[0, 2]),
         xaxis1=dict(showticklabels=False),
-        xaxis2=dict(
-            showticklabels=True, tickmode='array', tickvals=tick_vals, ticktext=tick_text, 
-            showgrid=True, gridcolor="rgba(255,255,255,0.08)", 
-            tickfont=dict(size=11, color="white") # Simplified font to match top strip
-        ),
+        xaxis2=dict(showticklabels=True, tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(size=11, color="white")),
         xaxis3=dict(showticklabels=False, showgrid=False)
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
-
-else:
-    st.error("Error loading data")
