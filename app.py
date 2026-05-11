@@ -85,24 +85,26 @@ if data and 'hourly' in data:
         marker_color=[get_color(w) for w in day_df['wind']],
         marker_line_width=0, showlegend=False,
         customdata=day_df['wind'],
-        hovertemplate='%{x}:00<br>%{customdata:.1f} kn<extra></extra>'
+        hovertemplate='%{x}:00<br>%{customdata:.0f} kn<extra></extra>'
     ))
 
     for d_date in day_df['date_only'].unique():
         group = day_df[day_df['date_only'] == d_date]
         center_idx = group.index[len(group)//2]
-        avg_knots = group['wind'].mean()
         
-        # Day Header (Mon 11)
+        # Calculate Rounded Average
+        avg_knots = round(group['wind'].mean())
+        
+        # Day Header
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
-        fig_top.add_annotation(x=center_idx, y=1.20, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
+        fig_top.add_annotation(x=center_idx, y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
         
-        # New: Average Knots overlay
+        # Average text INSIDE the color box
         fig_top.add_annotation(
-            x=center_idx, y=1.05, 
-            text=f"{avg_knots:.1f} kn avg", 
+            x=center_idx, y=0.5, 
+            text=f"<b>{avg_knots}</b>", 
             showarrow=False, 
-            font=dict(size=9, color="rgba(0,0,0,0.6)"), 
+            font=dict(size=14, color="white"), # Large white text on the color
             xanchor="center"
         )
         
@@ -111,7 +113,7 @@ if data and 'hourly' in data:
             fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
 
     fig_top.update_layout(
-        height=130, margin=dict(t=35, b=5, l=5, r=5),
+        height=125, margin=dict(t=35, b=5, l=5, r=5),
         template="plotly_white", bargap=0,
         xaxis=dict(type='category', showticklabels=False),
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False)
@@ -168,7 +170,7 @@ if data and 'hourly' in data:
     )
 
     # --- RENDER ---
-    st.title(f"🌬️ {selection}: {df.loc[idx_now, 'wind']:.1f} kn")
+    st.title(f"🌬️ {selection}: {round(df.loc[idx_now, 'wind'])} kn")
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
     st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
