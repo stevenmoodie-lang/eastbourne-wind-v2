@@ -10,12 +10,22 @@ import numpy as np
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Eastbourne Wind & Tide", layout="wide")
 
+# --- FIXED HEADER & COMPACT CSS ---
 st.markdown("""
     <style>
         .stApp { background-color: #3d5a73; color: #f8f9fa; }
-        .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
-        /* High contrast for visibility */
-        h1, h2, h3 { color: #ffffff !important; margin-bottom: 0px !important; }
+        
+        /* Fixed Header to ensure title is NEVER missing */
+        .fixed-header {
+            position: fixed; top: 0; left: 0; width: 100%;
+            background-color: #3d5a73; z-index: 999;
+            padding: 10px 20px; border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .block-container { padding-top: 6rem !important; padding-bottom: 0rem; }
+        
+        h1 { font-size: 2rem !important; margin: 0 !important; color: #ffffff !important; }
+        .loc-sub { font-size: 1rem; color: #d1d9e0; }
+        
         .stButton button { background-color: #4e6a82; color: white; border: 1px solid #7f8c8d; }
     </style>
 """, unsafe_allow_html=True)
@@ -88,11 +98,15 @@ if data and 'hourly' in data:
 
     idx_now = (df['time'] - now_nz).abs().idxmin()
     
-    # --- TITLE SECTION (FORCED VISIBILITY) ---
-    st.header(f"{round(df.loc[idx_now, 'wind'])} kn")
-    st.subheader(f"{selection} — {get_direction_label(df.loc[idx_now, 'dir'])}")
+    # --- FIXED TITLE BAR ---
+    st.markdown(f"""
+        <div class="fixed-header">
+            <h1>{round(df.loc[idx_now, 'wind'])} kn</h1>
+            <div class="loc-sub"><b>{selection}</b> — {get_direction_label(df.loc[idx_now, 'dir'])}</div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # Daily Summary Strip
+    # --- TOP HEATSTRIP (Daily Summary) ---
     daily_summary = df[~df['is_night']].groupby('date_only').agg({'wind': 'mean', 'dir': lambda x: x.mode()[0]}).reset_index()
     fig_top = go.Figure()
     fig_top.add_trace(go.Bar(x=daily_summary['date_only'].astype(str), y=[1]*len(daily_summary), marker_color=[get_color(w) for w in daily_summary['wind']], showlegend=False, hoverinfo='none'))
@@ -105,15 +119,15 @@ if data and 'hourly' in data:
     fig_top.update_layout(height=80, margin=dict(t=20, b=0, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0.05, xaxis=dict(showticklabels=False, showgrid=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False))
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- MAIN GRAPHS (HEATSTRIP REDUCED) ---
+    # --- COMPACT MAIN GRAPHS ---
     fig_bot = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=False, 
         vertical_spacing=0.01, 
-        row_heights=[0.05, 0.55, 0.40] # Heatstrip is now just 5% of height
+        row_heights=[0.05, 0.35, 0.20] # Aggressively flattened
     )
     
-    # 1. Tiny Wind Direction Heatstrip
+    # 1. Micro Heatstrip
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
         for s in range(3):
@@ -124,24 +138,25 @@ if data and 'hourly' in data:
                 fig_bot.add_trace(go.Bar(x=[t0+(t1-t0)/2], y=[1], width=(t1-t0).total_seconds()*1000, marker_color=get_color(w_mean), showlegend=False, hoverinfo='none'), row=1, col=1)
                 fig_bot.add_annotation(x=t0+(t1-t0)/2, y=0.5, text="➤", textangle=d_mean-90, showarrow=False, font=dict(size=7, color="white"), row=1, col=1)
 
-    # 2. Wind Line Graph
+    # 2. Compact Wind Line Graph
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         fig_bot.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], mode='lines', line=dict(color=get_color(p1['wind'], opacity=0.2 if p1['is_night'] else 1.0), width=2), showlegend=False, hoverinfo='none'), row=2, col=1)
 
-    # 3. Tide Silhouette
+    # 3. Compact Tide Silhouette
     fig_bot.add_trace(go.Scatter(x=tide_df['time'], y=tide_df['height'], fill='tozeroy', mode='lines', line=dict(color='#5dade2', width=1.1), fillcolor='rgba(93, 173, 226, 0.12)', showlegend=False, hoverinfo='none'), row=3, col=1)
     
-    # Global Night Shading
+    # Night Shading
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.3, line_width=0, row="all")
 
-    # Day labels (10pt centered)
+    # Day labels (Centered 10pt)
     tick_vals = [sun_data.iloc[i]['sunrise'] + (sun_data.iloc[i]['sunset'] - sun_data.iloc[i]['sunrise']) / 2 for i in range(len(sun_data))]
     tick_text = [f"<b>{pd.to_datetime(sun_data.iloc[i]['date']).strftime('%a')}</b>" for i in range(len(sun_data))]
 
     fig_bot.update_layout(
-        height=480, margin=dict(t=5, b=5, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=380, # Total chart height reduced
+        margin=dict(t=5, b=5, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis1=dict(showticklabels=False, matches='x2'),
         xaxis2=dict(showticklabels=True, tickmode='array', tickvals=tick_vals, ticktext=tick_text, tickfont=dict(size=10, color="#d1d9e0"), showgrid=False, anchor='y2'),
         xaxis3=dict(showticklabels=False, matches='x2'),
