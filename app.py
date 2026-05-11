@@ -40,7 +40,6 @@ unit = st.sidebar.radio("Units", ["km/h", "knots"])
 coords = STATIONS[selection]
 data = get_weather_data(coords["lat"], coords["lon"])
 nz_tz = pytz.timezone('Pacific/Auckland')
-# Get current time in NZ, then make it naive for comparison with Open-Meteo
 now_nz = datetime.now(nz_tz).replace(tzinfo=None)
 
 if data and 'hourly' in data:
@@ -52,10 +51,13 @@ if data and 'hourly' in data:
     if unit == "knots":
         df['wind'] *= 0.539957
 
-    # --- THE FIX IS HERE ---
+    # --- THE ROBUST FIX ---
     daily = data['daily']
+    # Force 'time' into a Series so .dt.date always works
+    sun_times = pd.Series(pd.to_datetime(daily['time']))
+    
     sun_data = pd.DataFrame({
-        'date': pd.to_datetime(daily['time']).dt.date, # Added .dt here
+        'date': sun_times.dt.date, 
         'sunrise': pd.to_datetime(daily['sunrise']),
         'sunset': pd.to_datetime(daily['sunset'])
     })
@@ -64,6 +66,7 @@ if data and 'hourly' in data:
     plot_df = df.copy()
     
     if hide_night:
+        # Also use .dt.date here for the hourly dataframe
         plot_df['date_only'] = plot_df['time'].dt.date
         plot_df = plot_df.merge(sun_data, left_on='date_only', right_on='date')
         plot_df = plot_df[(plot_df['time'] >= plot_df['sunrise']) & (plot_df['time'] <= plot_df['sunset'])]
@@ -71,7 +74,7 @@ if data and 'hourly' in data:
     # --- PLOTTING ---
     fig = go.Figure()
 
-    # 1. Add Night Shading (Only if night is visible)
+    # 1. Add Night Shading
     if not hide_night:
         for i in range(len(sun_data)):
             if i < len(sun_data) - 1:
@@ -81,7 +84,7 @@ if data and 'hourly' in data:
                     fillcolor="gray", opacity=0.15, line_width=0
                 )
 
-    # 2. Add Vertical Day Dividers (Only if night is hidden)
+    # 2. Add Vertical Day Dividers (Hidden Night Mode)
     else:
         day_starts = plot_df.groupby(plot_df['time'].dt.date).first()['time']
         for start_time in day_starts:
@@ -89,7 +92,6 @@ if data and 'hourly' in data:
 
     # 3. Add Current Time Line
     if not plot_df.empty:
-        # Finding the closest timestamp in our data to "Now"
         idx = (plot_df['time'] - now_nz).abs().idxmin()
         closest_time = plot_df.loc[idx, 'time']
         
@@ -109,7 +111,6 @@ if data and 'hourly' in data:
         mode='lines+markers' if hide_night else 'lines'
     ))
 
-    # Clean up layout
     fig.update_layout(
         title=f"Wind Forecast: {selection}",
         template="plotly_white",
@@ -129,9 +130,10 @@ if data and 'hourly' in data:
 
     # Summary Metrics
     m1, m2 = st.columns(2)
-    # Using the same index we found for the "Now" line
-    current_val = plot_df.loc[idx, 'wind']
-    m1.metric("Current Wind (Forecast)", f"{current_val:.1f} {unit}")
+    # Re-calculate index in case filtering changed the df size
+    curr_idx = (plot_df['time'] - now_nz).abs().idxmin()
+    current_val = plot_df.loc[curr_idx, 'wind']
+    m1.metric("Forecasted Wind Now", f"{current_val:.1f} {unit}")
     m2.metric("Station", selection)
 
 else:
