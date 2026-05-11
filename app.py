@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
 import numpy as np
+from scipy.signal import find_peaks
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
@@ -64,7 +65,8 @@ def get_weather_data():
         "sunset": pd.to_datetime(r["daily"]["sunset"])
     })
     
-    tide_times = pd.date_range(start=df['time'].min(), periods=24*7, freq='h')
+    # Harmonic Tide Simulation
+    tide_times = pd.date_range(start=df['time'].min(), periods=24*7*2, freq='30min')
     tide_heights = [1.0 + 0.6 * np.sin(2 * np.pi * (t.hour + t.minute/60) / 12.4) for t in tide_times]
     df_tide = pd.DataFrame({"time": tide_times, "height": tide_heights})
     
@@ -74,7 +76,7 @@ try:
     df_hourly, df_sun, df_tide = get_weather_data()
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
 
-    # --- 1. THE TOP ARROW RIBBON (The New Section) ---
+    # --- 1. THE TOP ARROW RIBBON ---
     segments = []
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -92,9 +94,9 @@ try:
     fig_ribbon = go.Figure()
     for s in segments:
         if "spacer" in s:
-            fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color="rgba(0,0,0,0)", showlegend=False, hoverinfo='skip'))
+            fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color="rgba(0,0,0,0)", showlegend=False))
             continue
-        fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False, hoverinfo='none'))
+        fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False))
         heading = (s['dir'] + 180) % 360
         y_pos = 0.5 if (75 < s['dir'] < 105 or 255 < s['dir'] < 285) else (0.35 if 105 <= s['dir'] <= 255 else 0.75)
         fig_ribbon.add_annotation(x=s['x_id'], y=y_pos, text="➤", showarrow=False, textangle=heading-90, font=dict(size=14, color="white"))
@@ -109,23 +111,47 @@ try:
     )
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. YESTERDAY'S DASHBOARD (Line + Tide Subplots) ---
-    fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.20, 0.10])
+    # --- 2. YESTERDAY'S DASHBOARD (RESTORED PEAKS/VALLEYS/TIDE TIMES) ---
+    fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.30, 0.15])
 
-    # Wind lines
+    # Wind Lines
     fig_main.add_trace(go.Scatter(x=df_hourly['time'], y=df_hourly['gust'], fill='tonexty', fillcolor='rgba(255,255,255,0.05)', line=dict(width=0), showlegend=False), row=1, col=1)
     fig_main.add_trace(go.Scatter(x=df_hourly['time'], y=df_hourly['speed'], line=dict(color='white', width=2), showlegend=False), row=1, col=1)
 
-    # Tide silhouette
-    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.2)', line=dict(color='#00d4ff', width=2), showlegend=False), row=2, col=1)
+    # Peak/Valley Indicators for Wind
+    peaks, _ = find_peaks(df_hourly['speed'], distance=6, prominence=2)
+    valleys, _ = find_peaks(-df_hourly['speed'], distance=6, prominence=2)
+    
+    for idx in np.concatenate([peaks, valleys]):
+        point = df_hourly.iloc[idx]
+        heading = (point['dir'] + 180) % 360
+        fig_main.add_annotation(
+            x=point['time'], y=point['speed'], text=f"{round(point['speed'])}<br>➤", 
+            showarrow=False, font=dict(size=9, color=get_color(point['speed'])), 
+            textangle=0, ay=-10, row=1, col=1
+        )
 
-    # Night Shading & Now Line
+    # Tide Silhouette
+    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)', line=dict(color='#00d4ff', width=2), showlegend=False), row=2, col=1)
+
+    # Tide Timestamps
+    t_peaks, _ = find_peaks(df_tide['height'], distance=10)
+    t_valleys, _ = find_peaks(-df_tide['height'], distance=10)
+    for idx in np.concatenate([t_peaks, t_valleys]):
+        p = df_tide.iloc[idx]
+        fig_main.add_annotation(
+            x=p['time'], y=p['height'], text=p['time'].strftime('%H:%M'),
+            showarrow=False, font=dict(size=8, color="#00d4ff"), yanchor="bottom" if idx in t_peaks else "top",
+            row=2, col=1
+        )
+
+    # Shading and "Now" line
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.3)", layer="below", line_width=0)
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
 
     fig_main.update_layout(
-        height=350, margin=dict(l=10, r=10, t=10, b=20), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=450, margin=dict(l=10, r=10, t=10, b=20), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, fixedrange=True),
         xaxis2=dict(showgrid=False, tickformat="%a", dtick=86400000.0, tickfont=dict(size=10, color="white"), fixedrange=True),
         yaxis=dict(title=dict(text="Knots", font=dict(size=10, color="white")), showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False, fixedrange=True),
