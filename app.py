@@ -52,22 +52,26 @@ def get_weather_data():
         "daily": ["sunrise", "sunset"], 
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
-    r = requests.get(url, params=params).json()
+    response = requests.get(url, params=params)
+    if response.status_code != 200:
+        return None, None, None
+        
+    r = response.json()
     
-    # Robust Time Handling
-    def to_nz_naive(series):
-        return pd.to_datetime(series, utc=True).dt.tz_convert('Pacific/Auckland').dt.tz_localize(None)
+    # helper for timezone handling
+    def to_local(series):
+        return pd.to_datetime(series).dt.tz_localize(None)
 
     df = pd.DataFrame({
-        "time": to_nz_naive(r["hourly"]["time"]), 
+        "time": to_local(r["hourly"]["time"]), 
         "speed": r["hourly"]["wind_speed_10m"], 
         "dir": r["hourly"]["wind_direction_10m"]
     })
     
     sun = pd.DataFrame({
         "date": pd.to_datetime(r["daily"]["time"]).date, 
-        "sunrise": to_nz_naive(r["daily"]["sunrise"]), 
-        "sunset": to_nz_naive(r["daily"]["sunset"])
+        "sunrise": to_local(r["daily"]["sunrise"]), 
+        "sunset": to_local(r["daily"]["sunset"])
     })
     
     t_range = pd.date_range(start=df['time'].min(), end=df['time'].max(), freq='15min')
@@ -76,7 +80,12 @@ def get_weather_data():
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    now = datetime.datetime.now()
+    
+    if df_hourly is None:
+        st.warning("Weather API is busy. Retrying in a few seconds...")
+        st.stop()
+
+    now = datetime.datetime.now().replace(microsecond=0)
     max_wind = df_hourly['speed'].max()
     crop_start, crop_end = df_sun['sunrise'].min(), df_sun['sunset'].max()
 
@@ -106,7 +115,7 @@ try:
     # --- 2. MAIN DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
-    # Wind Traces
+    # Wind Traces (Sync fixed by checking segment midpoint)
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         mid = p1['time'] + (p2['time'] - p1['time']) / 2
@@ -116,7 +125,7 @@ try:
     # Tide Traces
     dt_x, dt_y = [], []
     nt_x, nt_y = [], []
-    for i, row in df_tide.iterrows():
+    for _, row in df_tide.iterrows():
         if is_daylight(row['time']):
             dt_x.extend([row['time'], None]); dt_y.extend([row['height'], None])
         else:
@@ -126,22 +135,21 @@ try:
     fig_main.add_trace(go.Scatter(x=nt_x, y=nt_y, line=dict(color="rgba(255,255,255,0.08)", width=0.8), mode='lines', showlegend=False), row=2, col=1)
 
     # UI Shading & Markers
-    for i, day in df_sun.iterrows():
+    for _, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
         fig_main.add_vline(x=midday, line_width=0.5, line_dash="dot", line_color="rgba(255,255,255,0.1)")
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{day['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.5)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunrise'], y=-2, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.2)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunset'], y=-2, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.2)"), row=1, col=1)
         
-        # Fixed Daily Labels
+        # Daily Peak Labels (Restored)
         d_data = df_hourly[df_hourly['time'].dt.date == day['date']]
         if not d_data.empty:
-            hi, lo = d_data.loc[d_data['speed'].idxmax()], d_data.loc[d_data['speed'].idxmin()]
+            hi = d_data.loc[d_data['speed'].idxmax()]
+            lo = d_data.loc[d_data['speed'].idxmin()]
             for f, off in [(hi, 3.5), (lo, -3.5)]:
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + (off/2.5), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    # Tide Labels
+    # Tide Labels (Dimmed)
     for i in range(1, len(df_tide)-1):
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
@@ -149,6 +157,7 @@ try:
             alpha = 0.05 if not is_daylight(t['time']) else 0.4
             fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color=f"rgba(255,255,255,{alpha})"), yshift=7 if c > p else -7, row=2, col=1)
 
+    # Night Shading (Sync fixed)
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.3)", layer="below", line_width=0)
 
