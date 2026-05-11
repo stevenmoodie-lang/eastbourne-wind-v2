@@ -70,7 +70,6 @@ def get_tide_data(days):
     tide_heights = [1.0 + 0.6 * np.sin((t.timestamp() / 22357) * np.pi) for t in times]
     return pd.DataFrame({'time': times, 'height': tide_heights})
 
-# --- DATA FETCHING ---
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
 forecast_range = st.sidebar.radio("Range", ["7 Days", "3 Days"], index=0)
 days_to_fetch = 7 if forecast_range == "7 Days" else 3
@@ -97,7 +96,6 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- HEADER ---
     idx_now = (df['time'] - now_nz).abs().idxmin()
     col1, col2 = st.columns([6, 1]) 
     with col1:
@@ -177,27 +175,27 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Peak/Valley Labels with Tight Arrows
+    # Peak/Valley Labels with Ultra-Tight Arrows
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
             fig_bot.add_annotation(
                 x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
-                showarrow=False, yshift=15, xshift=-7, font=dict(size=10, color="white"), row=2, col=1
+                showarrow=False, yshift=15, xshift=-4, font=dict(size=10, color="white"), row=2, col=1
             )
             fig_bot.add_annotation(
                 x=peak['time'], y=peak['wind'], text="➤", textangle=peak['dir']-90, 
-                showarrow=False, yshift=15, xshift=10, font=dict(size=10, color="white"), row=2, col=1
+                showarrow=False, yshift=15, xshift=4, font=dict(size=10, color="white"), row=2, col=1
             )
             valley = day_block.loc[day_block['wind'].idxmin()]
             fig_bot.add_annotation(
                 x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
-                showarrow=False, yshift=-15, xshift=-7, font=dict(size=10, color="#d1d9e0"), row=2, col=1
+                showarrow=False, yshift=-15, xshift=-4, font=dict(size=10, color="#d1d9e0"), row=2, col=1
             )
             fig_bot.add_annotation(
                 x=valley['time'], y=valley['wind'], text="➤", textangle=valley['dir']-90, 
-                showarrow=False, yshift=-15, xshift=10, font=dict(size=10, color="#d1d9e0"), row=2, col=1
+                showarrow=False, yshift=-15, xshift=4, font=dict(size=10, color="#d1d9e0"), row=2, col=1
             )
 
     # Tide Silhouette (Row 3)
@@ -214,7 +212,6 @@ if data and 'hourly' in data:
         if tide_vals[i] < tide_vals[i-1] and tide_vals[i] < tide_vals[i+1]:
             fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), showarrow=False, yshift=-8, font=dict(size=9, color="#d1d9e0"), row=3, col=1)
 
-    # Global Night Shading
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.35, line_width=0, row="all")
 
