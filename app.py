@@ -43,7 +43,7 @@ nz_tz = pytz.timezone('Pacific/Auckland')
 now_nz = datetime.now(nz_tz).replace(tzinfo=None)
 
 if data and 'hourly' in data:
-    # Force 'time' into a Series to ensure .dt access
+    # Force 'time' into a Series for robust .dt access
     df = pd.DataFrame({
         'time': pd.Series(pd.to_datetime(data['hourly']['time'])),
         'wind': data['hourly']['wind_speed_10m']
@@ -52,7 +52,6 @@ if data and 'hourly' in data:
     if unit == "knots":
         df['wind'] *= 0.539957
 
-    # Process Sun Data safely
     daily = data['daily']
     sun_data = pd.DataFrame({
         'date': pd.Series(pd.to_datetime(daily['time'])).dt.date, 
@@ -79,7 +78,7 @@ if data and 'hourly' in data:
         mode='lines+markers' if hide_night else 'lines'
     ))
 
-    # 2. Add Night Shading (Normal Mode)
+    # 2. Add Night Shading (Only if night is visible)
     if not hide_night:
         for i in range(len(sun_data)):
             if i < len(sun_data) - 1:
@@ -89,28 +88,7 @@ if data and 'hourly' in data:
                     fillcolor="gray", opacity=0.15, line_width=0
                 )
 
-    # 3. Add Day Separators
-    # Logic: Detect where the date value changes between rows
-    plot_df['date_val'] = plot_df['time'].dt.date
-    date_switches = plot_df[plot_df['date_val'] != plot_df['date_val'].shift(1)].index.tolist()
-    
-    for idx in date_switches:
-        if idx == 0: continue # Skip the start of the chart
-        
-        switch_time = plot_df.loc[idx, 'time']
-        
-        fig.add_shape(
-            type="line", x0=switch_time, x1=switch_time, y0=0, y1=1,
-            xref="x", yref="paper",
-            line=dict(color="black", width=2, dash="solid")
-        )
-        fig.add_annotation(
-            x=switch_time, y=0.02, yref="paper",
-            text=f" {switch_time.strftime('%a')}", showarrow=False, 
-            xanchor="left", font=dict(color="black", size=12)
-        )
-
-    # 4. Add Current Time Line ("NOW")
+    # 3. Add Current Time Line ("NOW")
     if not plot_df.empty:
         idx_now = (plot_df['time'] - now_nz).abs().idxmin()
         closest_time = plot_df.loc[idx_now, 'time']
