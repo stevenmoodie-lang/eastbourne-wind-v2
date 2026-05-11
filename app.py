@@ -36,13 +36,13 @@ st.markdown("""
 LAT, LON = -41.405, 174.867
 
 def get_color(knots, alpha=1.0):
-    # Soft Pastel Palette
-    if knots <= 6: return f"rgba(180, 200, 220, {alpha})"    # Pastel Dust Blue
-    if knots <= 11: return f"rgba(160, 210, 230, {alpha})"   # Pastel Sky
-    if knots <= 15: return f"rgba(170, 220, 170, {alpha})"   # Muted Mint Green
-    if knots <= 19: return f"rgba(240, 230, 180, {alpha})"   # Soft Sand/Yellow
-    if knots <= 28: return f"rgba(240, 170, 170, {alpha})"   # Dusty Rose/Red
-    return f"rgba(180, 140, 140, {alpha})"                   # Muted Maroon
+    # Vibrant Pastel Palette: Softer than neon, but punchier than "dusty"
+    if knots <= 6: return f"rgba(149, 159, 239, {alpha})"    # Nova Blue
+    if knots <= 11: return f"rgba(113, 174, 242, {alpha})"   # Sky Drift
+    if knots <= 15: return f"rgba(150, 212, 112, {alpha})"   # Green Shimmer (Fresh & Punchy)
+    if knots <= 19: return f"rgba(242, 238, 143, {alpha})"   # Warm Yellow
+    if knots <= 28: return f"rgba(241, 163, 187, {alpha})"   # Cecilia Pink/Red
+    return f"rgba(172, 104, 215, {alpha})"                   # Lilac Purple
 
 @st.cache_data(ttl=600)
 def get_weather_data():
