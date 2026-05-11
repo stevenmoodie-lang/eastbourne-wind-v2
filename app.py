@@ -64,7 +64,6 @@ try:
     df_hourly, df_sun, df_tide = get_weather_data()
     now = datetime.datetime.now().replace(microsecond=0)
     max_wind = df_hourly['speed'].max()
-    # Explicitly calculate the total visible range including history
     all_time_min = df_hourly['time'].min()
     all_time_max = df_hourly['time'].max()
 
@@ -96,21 +95,22 @@ try:
     # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # FIXED NIGHT SHADING: Captures historical nights (Tues/Weds)
+    # COMPREHENSIVE NIGHT SHADING: Fixes missing Tues/Weds history
     night_shapes = []
-    # 1. Shade from start of data to the first sunrise
+    
+    # 1. Shade historical gap (Start of data to first recorded sunrise)
     first_sunrise = df_sun['sunrise'].min()
     if all_time_min < first_sunrise:
         night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=all_time_min, x1=first_sunrise, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.5)", layer="below", line_width=0))
     
-    # 2. Loop through all sunset -> next sunrise gaps
+    # 2. Cycle through all days: Shade sunset to following sunrise
     for i in range(len(df_sun)):
         current_sunset = df_sun.iloc[i]['sunset']
         if i + 1 < len(df_sun):
             next_sunrise = df_sun.iloc[i+1]['sunrise']
             night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_sunset, x1=next_sunrise, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.5)", layer="below", line_width=0))
         else:
-            # Shade from last sunset to end of data
+            # Shade final forecast night
             night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_sunset, x1=all_time_max, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.5)", layer="below", line_width=0))
 
     # Wind Lines
