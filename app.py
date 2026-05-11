@@ -66,20 +66,20 @@ if data and 'hourly' in data:
     if hide_night:
         plot_df['date_only'] = plot_df['time'].dt.date
         plot_df = plot_df.merge(sun_data, left_on='date_only', right_on='date')
+        # Only keep hours between sunrise and sunset
         plot_df = plot_df[(plot_df['time'] >= plot_df['sunrise']) & (plot_df['time'] <= plot_df['sunset'])]
 
     # --- PLOTTING ---
     fig = go.Figure()
 
     # 1. Add Wind Line
-    # We add this first so the x-axis "categories" are defined
     fig.add_trace(go.Scatter(
         x=plot_df['time'], y=plot_df['wind'], name=f'Wind ({unit})',
         line=dict(color='#007BFF', width=3),
         mode='lines+markers' if hide_night else 'lines'
     ))
 
-    # 2. Add Night Shading
+    # 2. Add Night Shading (Normal Mode)
     if not hide_night:
         for i in range(len(sun_data)):
             if i < len(sun_data) - 1:
@@ -89,30 +89,35 @@ if data and 'hourly' in data:
                     fillcolor="gray", opacity=0.15, line_width=0
                 )
 
-    # 3. Add Vertical Day Dividers
+    # 3. Add Day Separators (Specifically for Hidden Night Mode)
     else:
-        day_starts = plot_df.groupby(plot_df['time'].dt.date).first()['time']
+        # Find the very first data point for each day in the filtered set
+        day_starts = plot_df.groupby('date_only')['time'].first().iloc[1:] # Skip the first day
         for start_time in day_starts:
-            # We use the raw timestamp. Plotly handles vline better with raw data 
-            # if we don't force annotations inside the function.
-            fig.add_vline(x=start_time, line_width=1, line_dash="solid", line_color="rgba(0,0,0,0.3)")
+            fig.add_vline(
+                x=start_time, 
+                line_width=2, 
+                line_color="black", 
+                opacity=0.8,
+                annotation_text="NEW DAY",
+                annotation_position="bottom right"
+            )
 
-    # 4. Add Current Time Line (THE FIX FOR THE ERROR)
+    # 4. Add Current Time Line ("NOW")
     if not plot_df.empty:
+        # Find index of closest time to now
         idx = (plot_df['time'] - now_nz).abs().idxmin()
         closest_time = plot_df.loc[idx, 'time']
         
-        # FIX: We pass the position as a dictionary to avoid the mean() calculation bug
         fig.add_shape(
             type="line",
             x0=closest_time, x1=closest_time, y0=0, y1=1,
             xref="x", yref="paper",
             line=dict(color="green", width=2, dash="dot")
         )
-        # Separate annotation to avoid the error
         fig.add_annotation(
-            x=closest_time, y=1, yref="paper",
-            text="NOW", showarrow=False, xanchor="left", font=dict(color="green")
+            x=closest_time, y=1.05, yref="paper",
+            text="NOW", showarrow=False, xanchor="center", font=dict(color="green", size=14)
         )
 
     fig.update_layout(
@@ -121,23 +126,22 @@ if data and 'hourly' in data:
         hovermode="x unified",
         xaxis=dict(
             type='category' if hide_night else 'date',
-            tickformat="%a %I:%M %p",
-            nticks=12,
+            tickformat="%a %I %p", # Shorter format for cleaner look
+            nticks=15,
             title=""
         ),
-        yaxis=dict(title=unit),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        yaxis=dict(title=unit, rangemode="tozero"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(t=80) # Add space for "NOW" label
     )
 
     st.title(f"🌬️ {selection} Tracker")
     st.plotly_chart(fig, use_container_width=True)
 
     # Summary Metrics
-    m1, m2 = st.columns(2)
     curr_idx = (plot_df['time'] - now_nz).abs().idxmin()
     current_val = plot_df.loc[curr_idx, 'wind']
-    m1.metric("Forecasted Wind Now", f"{current_val:.1f} {unit}")
-    m2.metric("Station", selection)
+    st.metric("Forecasted Wind Now", f"{current_val:.1f} {unit}")
 
 else:
     st.error("Could not load weather data.")
