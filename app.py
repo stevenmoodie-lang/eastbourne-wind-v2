@@ -13,7 +13,6 @@ st.markdown("""
     <style>
         .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
         h1 { font-size: 1.5rem !important; margin-bottom: 0px !important; }
-        /* Vertical space between the two plotly charts */
         .stPlotlyChart { margin-bottom: 10px !important; } 
     </style>
 """, unsafe_allow_html=True)
@@ -81,7 +80,6 @@ if data and 'hourly' in data:
         hovertemplate='%{x}:00<br>%{customdata:.1f} kn<extra></extra>'
     ))
 
-    # Add large gaps (8px) between days
     prev_date = None
     for i, row in day_df.iterrows():
         current_date = row['time'].date()
@@ -117,15 +115,31 @@ if data and 'hourly' in data:
                                      mode='lines', line=dict(color=get_color(df['wind'][i]), width=2.5), 
                                      showlegend=False, hoverinfo='none'), row=2, col=1)
 
-    # Day annotations tucked close to the heatstrip
+    # Day Annotations, Night Shading, and Moons
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
+        
+        # Day Text
         fig_bot.add_annotation(
             x=midday, y=1.02, yref="y1", 
             text=f"<b>{midday.strftime('%a %d')}</b>",
-            showarrow=False, font=dict(size=9),
-            yanchor="bottom"
+            showarrow=False, font=dict(size=9), yanchor="bottom"
         )
+        
+        # Night Shading & Moons
+        if i < len(sun_data) - 1:
+            sunset = sun_data['sunset'].iloc[i]
+            sunrise_next = sun_data['sunrise'].iloc[i+1]
+            mid_night = sunset + (sunrise_next - sunset) / 2
+            
+            # Shading on line graph (Row 2)
+            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1)
+            
+            # Moon in heatstrip (Row 1)
+            fig_bot.add_annotation(
+                x=mid_night, y=0.5, yref="y1",
+                text="🌙", showarrow=False, font=dict(size=10)
+            )
 
     # Current time indicator
     idx_now = (df['time'] - now_nz).abs().idxmin()
@@ -141,14 +155,8 @@ if data and 'hourly' in data:
 
     # --- RENDER ---
     st.title(f"🌬️ {selection}: {df.loc[idx_now, 'wind']:.1f} kn")
-    
-    # Render top chart
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
-    
-    # Manual Spacer for a bigger gap between the two graphs
     st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
-    
-    # Render bottom chart
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
 
 else:
