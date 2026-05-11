@@ -14,30 +14,25 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- DATA FETCHING (The "No-Key" Stealth Mode) ---
-def get_niwa_wind(loc_id):
-    # We use the 'combined' endpoint but try the 'forecast' one if it fails
-    url = f"https://weather-api-azure.niwa.co.nz/api/location/{loc_id}/combined"
+def get_niwa_data(location_name):
+    # This URL is the one used by niwa.co.nz directly
+    # Use names like 'Wellington' or 'Baring Head' (case sensitive)
+    url = f"https://weather.niwa.co.nz/api/v1/forecast/{location_name}"
     
-    # These headers help bypass the 404 block by appearing as a local user
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Origin": "https://weather-api-azure.niwa.co.nz",
-        "Referer": "https://weather-api-azure.niwa.co.nz/"
+        "Accept": "application/json"
     }
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        
-        # If combined fails, try the forecast endpoint automatically
-        if response.status_code != 200:
-            url_alt = f"https://weather-api-azure.niwa.co.nz/api/location/{loc_id}/forecast"
-            response = requests.get(url_alt, headers=headers, timeout=10)
-            
         if response.status_code == 200:
             return response.json()
-        return None
-    except:
+        else:
+            st.error(f"Public API error: {response.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"Connection failed: {e}")
         return None
 
 # --- SIDEBAR ---
