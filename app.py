@@ -51,9 +51,7 @@ if data and 'hourly' in data:
     if unit == "knots":
         df['wind'] *= 0.539957
 
-    # --- THE ROBUST FIX ---
     daily = data['daily']
-    # Force 'time' into a Series so .dt.date always works
     sun_times = pd.Series(pd.to_datetime(daily['time']))
     
     sun_data = pd.DataFrame({
@@ -66,7 +64,6 @@ if data and 'hourly' in data:
     plot_df = df.copy()
     
     if hide_night:
-        # Also use .dt.date here for the hourly dataframe
         plot_df['date_only'] = plot_df['time'].dt.date
         plot_df = plot_df.merge(sun_data, left_on='date_only', right_on='date')
         plot_df = plot_df[(plot_df['time'] >= plot_df['sunrise']) & (plot_df['time'] <= plot_df['sunset'])]
@@ -74,7 +71,15 @@ if data and 'hourly' in data:
     # --- PLOTTING ---
     fig = go.Figure()
 
-    # 1. Add Night Shading
+    # 1. Add Wind Line
+    # We add this first so the x-axis "categories" are defined
+    fig.add_trace(go.Scatter(
+        x=plot_df['time'], y=plot_df['wind'], name=f'Wind ({unit})',
+        line=dict(color='#007BFF', width=3),
+        mode='lines+markers' if hide_night else 'lines'
+    ))
+
+    # 2. Add Night Shading
     if not hide_night:
         for i in range(len(sun_data)):
             if i < len(sun_data) - 1:
@@ -84,32 +89,31 @@ if data and 'hourly' in data:
                     fillcolor="gray", opacity=0.15, line_width=0
                 )
 
-    # 2. Add Vertical Day Dividers (Hidden Night Mode)
+    # 3. Add Vertical Day Dividers
     else:
         day_starts = plot_df.groupby(plot_df['time'].dt.date).first()['time']
         for start_time in day_starts:
+            # We use the raw timestamp. Plotly handles vline better with raw data 
+            # if we don't force annotations inside the function.
             fig.add_vline(x=start_time, line_width=1, line_dash="solid", line_color="rgba(0,0,0,0.3)")
 
-    # 3. Add Current Time Line
+    # 4. Add Current Time Line (THE FIX FOR THE ERROR)
     if not plot_df.empty:
         idx = (plot_df['time'] - now_nz).abs().idxmin()
         closest_time = plot_df.loc[idx, 'time']
         
-        fig.add_vline(
-            x=closest_time, 
-            line_width=2, 
-            line_dash="dot", 
-            line_color="green",
-            annotation_text="NOW", 
-            annotation_position="top left"
+        # FIX: We pass the position as a dictionary to avoid the mean() calculation bug
+        fig.add_shape(
+            type="line",
+            x0=closest_time, x1=closest_time, y0=0, y1=1,
+            xref="x", yref="paper",
+            line=dict(color="green", width=2, dash="dot")
         )
-
-    # 4. Add Wind Line
-    fig.add_trace(go.Scatter(
-        x=plot_df['time'], y=plot_df['wind'], name=f'Wind ({unit})',
-        line=dict(color='#007BFF', width=3),
-        mode='lines+markers' if hide_night else 'lines'
-    ))
+        # Separate annotation to avoid the error
+        fig.add_annotation(
+            x=closest_time, y=1, yref="paper",
+            text="NOW", showarrow=False, xanchor="left", font=dict(color="green")
+        )
 
     fig.update_layout(
         title=f"Wind Forecast: {selection}",
@@ -130,7 +134,6 @@ if data and 'hourly' in data:
 
     # Summary Metrics
     m1, m2 = st.columns(2)
-    # Re-calculate index in case filtering changed the df size
     curr_idx = (plot_df['time'] - now_nz).abs().idxmin()
     current_val = plot_df.loc[curr_idx, 'wind']
     m1.metric("Forecasted Wind Now", f"{current_val:.1f} {unit}")
