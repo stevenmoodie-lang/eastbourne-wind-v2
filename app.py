@@ -62,7 +62,6 @@ def get_weather_data():
         "sunrise": pd.to_datetime(r["daily"]["sunrise"]),
         "sunset": pd.to_datetime(r["daily"]["sunset"])
     })
-    # Basic tide simulation
     tide_times = pd.date_range(start=df['time'].min(), end=df['time'].max(), freq='15min')
     tide_heights = [1.0 + 0.6 * np.sin(2 * np.pi * (t.hour + t.minute/60) / 12.4) for t in tide_times]
     df_tide = pd.DataFrame({"time": tide_times, "height": tide_heights})
@@ -111,7 +110,7 @@ try:
     # --- 2. THE WIND & TIDE DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.55, 0.25])
 
-    # Wind Lines with Sunrise/Sunset splits
+    # Wind Lines with subtle Night transitions
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
@@ -122,21 +121,23 @@ try:
             t_start, t_end = current_times[j], current_times[j+1]
             frac = (t_start - p1['time']) / (p2['time'] - p1['time']) if p2['time'] != p1['time'] else 0
             interp_speed = p1['speed'] + frac * (p2['speed'] - p1['speed'])
+            
             is_night = t_start < sr or t_start >= ss
-            alpha = 0.08 if is_night else 1.0
+            # Subtly increased night alpha from 0.08 to 0.12 for visibility
+            alpha = 0.12 if is_night else 1.0
+            
             fig_main.add_trace(go.Scatter(
                 x=[t_start, t_end], y=[interp_speed, interp_speed + (p2['speed']-p1['speed']) * ((t_end-t_start)/(p2['time']-p1['time']))],
                 line=dict(color=get_color(interp_speed, alpha), width=2.5 if not is_night else 1),
                 mode='lines', showlegend=False, hoverinfo='skip'
             ), row=1, col=1)
 
-    # Wind Day Labels & Peaks/Valleys
+    # Day Labels & Peak/Valley Arrows
     for _, day_sun in df_sun.iterrows():
         midpoint = day_sun['sunrise'] + (day_sun['sunset'] - day_sun['sunrise']) / 2
-        # Center Day Name above wind plot only
         fig_main.add_annotation(
             x=midpoint, y=max_wind + 8, text=f"<b>{day_sun['date'].strftime('%a')}</b>",
-            showarrow=False, font=dict(size=10, color="rgba(255,255,255,0.8)"), row=1, col=1
+            showarrow=False, font=dict(size=10, color="rgba(255,255,255,0.7)"), row=1, col=1
         )
         
         day_mask = (df_hourly['time'] >= day_sun['sunrise']) & (df_hourly['time'] <= day_sun['sunset'])
@@ -151,7 +152,6 @@ try:
     # Tide Graph
     fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.05)', line=dict(color='#00d4ff', width=1.5), showlegend=False, hoverinfo='skip'), row=2, col=1)
     
-    # Tide High/Low Timestamps
     for i in range(1, len(df_tide)-1):
         prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
@@ -159,16 +159,15 @@ try:
             fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, 
                                     font=dict(size=8, color="#00d4ff"), yshift=7 if curr > prev else -7, row=2, col=1)
 
-    # Night Shading & "Now" Line
+    # SHADING UPDATE: Reduced alpha from 0.5 to 0.25 for a more subtle contrast
     for i in range(len(df_sun)-1):
-        fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.5)", layer="below", line_width=0)
+        fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.25)", layer="below", line_width=0)
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
 
     fig_main.update_layout(
         height=320, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, fixedrange=True),
         xaxis2=dict(visible=False, fixedrange=True),
-        # Removed Y-axis tick labels for both
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 12]),
         yaxis2=dict(showgrid=False, zeroline=False, fixedrange=True, showticklabels=False, range=[0, 2.2])
     )
