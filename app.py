@@ -132,14 +132,14 @@ try:
                 mode='lines', showlegend=False, hoverinfo='skip'
             ), row=1, col=1)
 
-    # TIDE PLOT (Segmented for night dimming)
+    # TIDE PLOT (Segmented for heavy night dimming)
     for i in range(len(df_tide)-1):
         t1, t2 = df_tide.iloc[i], df_tide.iloc[i+1]
         day_info = df_sun[df_sun['date'] == t1['time'].date()].iloc[0]
         sr, ss = day_info['sunrise'], day_info['sunset']
         
         is_night = t1['time'] < sr or t1['time'] >= ss
-        opacity = 0.3 if is_night else 1.0
+        opacity = 0.1 if is_night else 1.0 # Extra dimmed
         
         fig_main.add_trace(go.Scatter(
             x=[t1['time'], t2['time']], 
@@ -147,7 +147,7 @@ try:
             mode='lines',
             line=dict(color=f"rgba(255, 255, 255, {opacity})", width=1),
             fill='tozeroy',
-            fillcolor=f"rgba(255, 255, 255, {0.03 if not is_night else 0.01})",
+            fillcolor=f"rgba(255, 255, 255, {0.03 if not is_night else 0.005})",
             showlegend=False, hoverinfo='skip'
         ), row=2, col=1)
 
