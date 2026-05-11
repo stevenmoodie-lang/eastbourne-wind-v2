@@ -36,13 +36,13 @@ st.markdown("""
 LAT, LON = -41.405, 174.867
 
 def get_color(knots, alpha=1.0):
-    # Balanced Palette: Crisp Light Blue to Defined Colors
-    if knots <= 6: return f"rgba(209, 233, 246, {alpha})"    # Very Light Ice Blue
-    if knots <= 11: return f"rgba(110, 197, 233, {alpha})"   # Sky Blue
+    # Adjusted Palette: Deeper light blue, crisp progression
+    if knots <= 6: return f"rgba(169, 201, 217, {alpha})"    # Steel Blue (Slightly Darker)
+    if knots <= 11: return f"rgba(92, 169, 204, {alpha})"    # Ocean Blue
     if knots <= 15: return f"rgba(122, 214, 134, {alpha})"   # Soft Leaf Green
     if knots <= 19: return f"rgba(255, 230, 109, {alpha})"   # Sun Yellow
     if knots <= 28: return f"rgba(255, 126, 121, {alpha})"   # Coral Red
-    return f"rgba(188, 108, 167, {alpha})"                   # Muted Magenta/Purple
+    return f"rgba(188, 108, 167, {alpha})"                   # Muted Magenta
 
 @st.cache_data(ttl=600)
 def get_weather_data():
