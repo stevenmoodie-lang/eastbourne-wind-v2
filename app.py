@@ -72,7 +72,7 @@ try:
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
     max_wind = df_hourly['speed'].max()
 
-    # --- 1. MINIMAL ARROW RIBBON ---
+    # --- 1. DYNAMIC ARROW RIBBON ---
     segments = []
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -93,18 +93,29 @@ try:
             fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color="rgba(0,0,0,0)", showlegend=False))
             continue
         fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False))
+        
+        # Calculate arrow rotation
         heading = (s['dir'] + 180) % 360
-        # Reduced arrowhead to size 7 and speed text to 7
-        # Restored vertical centering using y=0.5 for arrow and y=0.15 for text
-        fig_ribbon.add_annotation(x=s['x_id'], y=0.5, text="➤", showarrow=False, textangle=heading-90, font=dict(size=7, color="white"))
-        fig_ribbon.add_annotation(x=s['x_id'], y=0.15, text=f"<b>{round(s['speed'])}</b>", showarrow=False, font=dict(size=7, color="white"))
+        
+        # FIXED: Arrow Y-position mapped to direction (North=Top, South=Bottom)
+        # Cosine of direction gives 1 for North (0) and -1 for South (180). 
+        # Map that range to 0.25 -> 0.75 for safe padding.
+        y_arrow = 0.5 + (0.35 * np.cos(np.deg2rad(s['dir'])))
+
+        # Arrow placement
+        fig_ribbon.add_annotation(x=s['x_id'], y=y_arrow, text="➤", showarrow=False, 
+                                  textangle=heading-90, font=dict(size=7, color="white"))
+        
+        # FIXED: Speed text sitting BELOW the heatstrip (in the negative range)
+        fig_ribbon.add_annotation(x=s['x_id'], y=-0.3, text=f"<b>{round(s['speed'])}</b>", 
+                                  showarrow=False, font=dict(size=7, color="white"))
 
     fig_ribbon.update_layout(
-        height=70, margin=dict(l=5, r=5, t=25, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0,
+        height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0,
         xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], 
                    ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], side="top", 
                    tickfont=dict(size=9, color="white"), fixedrange=True),
-        yaxis=dict(visible=False, range=[0, 1], fixedrange=True)
+        yaxis=dict(visible=False, range=[-0.6, 1.1], fixedrange=True)
     )
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
