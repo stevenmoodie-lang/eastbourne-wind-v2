@@ -87,13 +87,13 @@ if data and 'hourly' in data:
     col1, col2 = st.columns([6, 1]) 
     with col1:
         st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
-        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> — Blows from <b>{get_direction_label(df.loc[idx_now, 'dir'])}</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> — Currently <b>{get_direction_label(df.loc[idx_now, 'dir'])}</b></div>", unsafe_allow_html=True)
     with col2:
         if st.button("🔄 Refresh"):
             st.cache_data.clear()
             st.rerun()
 
-    # --- 1. TOP GRAPH (DAY BLOCKS) ---
+    # --- 1. TOP SUMMARY GRAPH ---
     day_df = df[~df['is_night']].copy()
     daily_summary = day_df.groupby('date_only').agg({'wind': 'mean', 'dir': lambda x: x.mode()[0]}).reset_index()
     
@@ -112,9 +112,8 @@ if data and 'hourly' in data:
     fig_top.update_layout(height=110, margin=dict(t=35, b=0, l=5, r=5), template="plotly_white", bargap=0.05, xaxis=dict(showticklabels=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False))
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. MULTI-PLOT (SPEED + DIRECTION) ---
-    # Rows: 1=Heatstrip, 2=Wind Speed, 3=Wind Direction
-    fig_bot = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.1, 0.5, 0.4])
+    # --- 2. MAIN CHART (HEATSTRIP + SPEED + DIRECTION TEXT) ---
+    fig_bot = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.1, 0.75, 0.15])
     
     # ROW 1: Heatstrip
     for i, row in daily_summary.iterrows():
@@ -125,37 +124,45 @@ if data and 'hourly' in data:
         fig_bot.add_annotation(x=pd.to_datetime(row['date_only']) + pd.Timedelta(hours=12), y=0.5, yref="y1", 
                                text=f"<b>{get_direction_label(row['dir'])}</b>", showarrow=False, font=dict(size=10, color="white"), row=1, col=1)
 
-    # ROW 2 & 3: Speed & Direction Line Segments
+    # ROW 2: Wind Speed Line (Segments)
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         opacity = 0.15 if (p1['is_night'] and p2['is_night']) else 1.0
-        color = get_color(p1['wind'], opacity=opacity)
-        
-        # Speed Line (Row 2)
-        fig_bot.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], mode='lines', line=dict(color=color, width=2.5), showlegend=False, hoverinfo='none'), row=2, col=1)
-        
-        # Direction Line (Row 3)
-        fig_bot.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['dir'], p2['dir']], mode='lines', line=dict(color=color, width=2), showlegend=False, hoverinfo='none'), row=3, col=1)
+        fig_bot.add_trace(go.Scatter(
+            x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], 
+            mode='lines', line=dict(color=get_color(p1['wind'], opacity=opacity), width=2.5), 
+            showlegend=False, hoverinfo='none'
+        ), row=2, col=1)
 
-    # Peak markers on Row 2
+    # ROW 3: Wind Direction Text Timeline
+    # Sample every 3 hours for readability
+    dir_samples = df.iloc[::3]
+    for _, row in dir_samples.iterrows():
+        opacity = 0.3 if row['is_night'] else 1.0
+        fig_bot.add_annotation(
+            x=row['time'], y=0.5, yref="y3",
+            text=f"<b>{get_direction_label(row['dir'])}</b>",
+            showarrow=False,
+            font=dict(size=10, color=get_color(row['wind'], opacity=opacity)),
+            row=3, col=1
+        )
+
+    # Night Shading & Peak labels
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
-            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=12, font=dict(size=10), row=2, col=1)
+            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10), row=2, col=1)
 
-    # Night Shading across all rows
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="black", opacity=0.08, line_width=0, row="all")
 
     fig_bot.update_layout(
-        height=450, margin=dict(t=10, b=0, l=5, r=5), template="plotly_white",
-        yaxis1=dict(showticklabels=False, range=[0, 1.2], showgrid=False), # Heatstrip
+        height=400, margin=dict(t=10, b=0, l=5, r=5), template="plotly_white",
+        yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False), # Heatstrip
         yaxis2=dict(title="Knots", side="left", showgrid=True, tickfont=dict(size=9)), # Speed
-        yaxis3=dict(
-            title="Direction", side="left", showgrid=True, tickfont=dict(size=9),
-            tickmode='array', tickvals=[0, 90, 180, 270, 360], ticktext=['N', 'E', 'S', 'W', 'N'], range=[0, 360]
-        ) # Direction
+        yaxis3=dict(showticklabels=False, range=[0, 1], showgrid=False, zeroline=False), # Direction Text Row
+        xaxis3=dict(showgrid=True, tickfont=dict(size=9, color="gray"))
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
