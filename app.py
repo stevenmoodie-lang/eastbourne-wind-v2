@@ -20,9 +20,7 @@ st.markdown("""
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
         }
-        .custom-title {
-            text-align: center; font-size: 1.3rem; font-weight: 700; color: #ffffff; margin-bottom: 0.3rem;
-        }
+        .custom-title { text-align: center; font-size: 1.3rem; font-weight: 700; color: #ffffff; margin-bottom: 0.3rem; }
     </style>
     <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
@@ -64,8 +62,7 @@ try:
     df_hourly, df_sun, df_tide = get_weather_data()
     now = datetime.datetime.now().replace(microsecond=0)
     max_wind = df_hourly['speed'].max()
-    all_time_min = df_hourly['time'].min()
-    all_time_max = df_hourly['time'].max()
+    all_time_min, all_time_max = df_hourly['time'].min(), df_hourly['time'].max()
 
     def check_daylight(t, sun_df):
         match = sun_df[sun_df['date'] == t.date()]
@@ -95,23 +92,24 @@ try:
     # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # COMPREHENSIVE NIGHT SHADING: Fixes missing Tues/Weds history
+    # RELIABLE NIGHT SHADING: Backfilling history
     night_shapes = []
-    
-    # 1. Shade historical gap (Start of data to first recorded sunrise)
-    first_sunrise = df_sun['sunrise'].min()
-    if all_time_min < first_sunrise:
-        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=all_time_min, x1=first_sunrise, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.5)", layer="below", line_width=0))
-    
-    # 2. Cycle through all days: Shade sunset to following sunrise
-    for i in range(len(df_sun)):
-        current_sunset = df_sun.iloc[i]['sunset']
-        if i + 1 < len(df_sun):
-            next_sunrise = df_sun.iloc[i+1]['sunrise']
-            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_sunset, x1=next_sunrise, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.5)", layer="below", line_width=0))
+    # Generate 1-hour increments to check for nighttime gaps
+    check_times = pd.date_range(all_time_min, all_time_max, freq='1h')
+    night_periods = []
+    current_start = None
+
+    for t in check_times:
+        if not check_daylight(t, df_sun):
+            if current_start is None: current_start = t
         else:
-            # Shade final forecast night
-            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_sunset, x1=all_time_max, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.5)", layer="below", line_width=0))
+            if current_start is not None:
+                night_periods.append((current_start, t))
+                current_start = None
+    if current_start: night_periods.append((current_start, all_time_max))
+
+    for start, end in night_periods:
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=start, x1=end, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.4)", layer="below", line_width=0))
 
     # Wind Lines
     for i in range(len(df_hourly)-1):
@@ -143,13 +141,11 @@ try:
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
             t = df_tide.iloc[i]
-            is_day = check_daylight(t['time'], df_sun)
-            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8.5, color="white" if is_day else "rgba(255,255,255,0.18)"), yshift=10 if c > p else -10, row=2, col=1)
+            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8, color="white"), yshift=10 if c > p else -10, row=2, col=1)
 
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
     fig_main.update_layout(
-        shapes=night_shapes,
-        height=230, margin=dict(l=10, r=10, t=5, b=5),
+        shapes=night_shapes, height=230, margin=dict(l=10, r=10, t=5, b=5),
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, range=[all_time_min, all_time_max]),
         xaxis2=dict(visible=False, range=[all_time_min, all_time_max]),
