@@ -92,6 +92,7 @@ try:
             fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color="rgba(0,0,0,0)", showlegend=False))
             continue
         fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False))
+        # Arrow points TO direction
         heading = (s['dir'] + 180) % 360
         y_pos = 0.5 if (75 < s['dir'] < 105 or 255 < s['dir'] < 285) else (0.35 if 105 <= s['dir'] <= 255 else 0.75)
         fig_ribbon.add_annotation(x=s['x_id'], y=y_pos, text="➤", showarrow=False, textangle=heading-90, font=dict(size=14, color="white"))
@@ -106,10 +107,10 @@ try:
     )
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. YESTERDAY'S DASHBOARD (MODIFIED) ---
+    # --- 2. THE LINE DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.30, 0.15])
 
-    # Multi-colored wind line: We split into segments to show color changes on the line
+    # Color-coded wind line
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         fig_main.add_trace(go.Scatter(
@@ -118,35 +119,27 @@ try:
             mode='lines', showlegend=False, hoverinfo='skip'
         ), row=1, col=1)
 
-    # DAILY MAX/MIN INDICATORS
+    # Max/Min Daily Indicators
     for _, day_sun in df_sun.iterrows():
         mask = (df_hourly['time'].dt.date == day_sun['date'])
         day_data = df_hourly[mask]
         if not day_data.empty:
-            for func, offset in [(day_data.loc[day_data['speed'].idxmax()], 1.5), 
-                                 (day_data.loc[day_data['speed'].idxmin()], -1.5)]:
+            for func, offset in [(day_data.loc[day_data['speed'].idxmax()], 2.5), 
+                                 (day_data.loc[day_data['speed'].idxmin()], -2.5)]:
+                # Arrow points TO heading
                 heading = (func['dir'] + 180) % 360
                 fig_main.add_annotation(
                     x=func['time'], y=func['speed'] + offset, 
-                    text=f"{round(func['speed'])}<br>➤", 
+                    text=f"<b>{round(func['speed'])}</b> <span style='display:inline-block; transform:rotate({heading-90}deg);'>➤</span>", 
                     showarrow=False, 
-                    font=dict(size=10, color="white"),
-                    textangle=0, # Keep text horizontal
-                    row=1, col=1
-                )
-                # Adding the arrow icon separately so it can be rotated without rotating the text
-                fig_main.add_annotation(
-                    x=func['time'], y=func['speed'], 
-                    text="➤", showarrow=False, 
-                    textangle=heading-90, 
-                    font=dict(size=12, color=get_color(func['speed'])),
+                    font=dict(size=11, color="white"),
                     row=1, col=1
                 )
 
     # Tide Silhouette
     fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)', line=dict(color='#00d4ff', width=2), showlegend=False), row=2, col=1)
 
-    # Tide Timestamps (High/Low)
+    # Tide Timestamps
     for i in range(1, len(df_tide)-1):
         prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
@@ -154,15 +147,21 @@ try:
             fig_main.add_annotation(x=p['time'], y=p['height'], text=p['time'].strftime('%H:%M'), showarrow=False, 
                                     font=dict(size=8, color="#00d4ff"), yanchor="bottom" if curr > prev else "top", row=2, col=1)
 
+    # Night Shading & Now Line
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.3)", layer="below", line_width=0)
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
 
     fig_main.update_layout(
-        height=450, margin=dict(l=10, r=10, t=10, b=20), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False, fixedrange=True),
+        height=450, margin=dict(l=10, r=10, t=30, b=20), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(
+            showgrid=False, tickmode='array',
+            tickvals=[pd.Timestamp(d) + pd.Timedelta(hours=12) for d in df_sun['date']], 
+            ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], 
+            side="top", tickfont=dict(size=12, color="white"), fixedrange=True
+        ),
         xaxis2=dict(showgrid=False, tickformat="%a", dtick=86400000.0, tickfont=dict(size=10, color="white"), fixedrange=True),
-        yaxis=dict(title=dict(text="Knots", font=dict(size=10, color="white")), showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False, fixedrange=True),
+        yaxis=dict(title=None, showgrid=True, gridcolor='rgba(255,255,255,0.05)', zeroline=False, fixedrange=True),
         yaxis2=dict(visible=False, fixedrange=True)
     )
     st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False})
