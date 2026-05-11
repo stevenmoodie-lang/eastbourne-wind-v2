@@ -9,7 +9,7 @@ import pytz
 # --- PAGE CONFIG & CSS ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
-# Custom CSS for "Lighter Again" Cloudy Slate Theme
+# Custom CSS for Cloudy Slate Theme
 st.markdown("""
     <style>
         .stApp {
@@ -133,17 +133,28 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.12, 0.88])
     
-    # ROW 1: 4-Hourly Heatstrip with Arrows
-    df_4h = df.resample('4h', on='time', origin='start_day').agg({'wind': 'mean', 'dir': 'mean'}).reset_index()
+    # ROW 1: 4-Hourly Heatstrip with Night-Aware Colouring
+    # origin='start_day' ensures we align with midnight
+    df_4h = df.resample('4h', on='time', origin='start_day').agg({
+        'wind': 'mean', 
+        'dir': 'mean',
+        'is_night': lambda x: x.mode()[0] # Determine if majority of block is night
+    }).reset_index()
+    
     for _, row in df_4h.iterrows():
+        # If night, use a dark grey-blue matching the shading, else use wind color
+        block_color = "#2c3e50" if row['is_night'] else get_color(row['wind'])
+        arrow_color = "rgba(255,255,255,0.4)" if row['is_night'] else "white"
+
         fig_bot.add_trace(go.Bar(
             x=[row['time'] + timedelta(hours=2)], y=[1], width=1000*3600*4,
-            marker_color=get_color(row['wind']), showlegend=False, hoverinfo='none'
+            marker_color=block_color, showlegend=False, hoverinfo='none'
         ), row=1, col=1)
+        
         fig_bot.add_annotation(
             x=row['time'] + timedelta(hours=2), y=0.5, yref="y1",
             text="➤", textangle=row['dir']-90,
-            showarrow=False, font=dict(size=14, color="white"), row=1, col=1
+            showarrow=False, font=dict(size=14, color=arrow_color), row=1, col=1
         )
 
     # ROW 2: Wind Speed Line (Colored Segments)
@@ -156,21 +167,17 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Night Shading
+    # Night Shading (Line Graph)
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.4, line_width=0, row="all")
     
     # PEAK & VALLEY ANNOTATIONS (Daylight Only)
     for d_date in df['date_only'].unique():
-        # Specifically filter for daylight hours to find local peaks/valleys
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
-        
         if not day_block.empty:
-            # Peak within daylight
             peak = day_block.loc[day_block['wind'].idxmax()]
             fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
                                    showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
-            # Valley within daylight
             valley = day_block.loc[day_block['wind'].idxmin()]
             fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
                                    showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
