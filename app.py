@@ -32,7 +32,7 @@ st.markdown("""
     <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
 
-# --- SETTINGS ---
+# --- SETTINGS & TIDE MODEL ---
 LAT, LON = -41.405, 174.867
 
 def get_color(knots, alpha=1.0):
@@ -42,6 +42,26 @@ def get_color(knots, alpha=1.0):
     if knots <= 19: return f"rgba(255, 230, 109, {alpha})"   
     if knots <= 28: return f"rgba(255, 126, 121, {alpha})"   
     return f"rgba(188, 108, 167, {alpha})"                   
+
+def calculate_wellington_tide(times):
+    """
+    Simplified harmonic model for Wellington Harbour.
+    Uses the M2 (lunar) and S2 (solar) constituents to approximate 
+    the semi-diurnal tide patterns seen at Eastbourne/Rona Wharf.
+    """
+    # Reference high tide for Wellington (approximate epoch for 2026 calibration)
+    # Wellington tides are roughly 12h 25m apart
+    t_ref = pd.Timestamp("2026-05-12 00:10:00") 
+    
+    # Time delta in hours from reference
+    hours = (times - t_ref).total_seconds() / 3600.0
+    
+    # M2 Period ~12.42h, S2 Period ~12.0h
+    # Heights approx 1.6m range
+    m2 = 0.45 * np.cos(2 * np.pi * hours / 12.42)
+    s2 = 0.15 * np.cos(2 * np.pi * hours / 12.00)
+    
+    return 1.1 + m2 + s2 # Centered around Mean Sea Level
 
 @st.cache_data(ttl=600)
 def get_weather_data():
@@ -63,8 +83,9 @@ def get_weather_data():
         "sunrise": pd.to_datetime(r["daily"]["sunrise"]),
         "sunset": pd.to_datetime(r["daily"]["sunset"])
     })
+    
     tide_times = pd.date_range(start=df['time'].min(), end=df['time'].max(), freq='15min')
-    tide_heights = [1.0 + 0.6 * np.sin(2 * np.pi * (t.hour + t.minute/60) / 12.4) for t in tide_times]
+    tide_heights = [calculate_wellington_tide(t) for t in tide_times]
     df_tide = pd.DataFrame({"time": tide_times, "height": tide_heights})
     return df, sun, df_tide
 
