@@ -66,7 +66,6 @@ if data and 'hourly' in data:
     if hide_night:
         plot_df['date_only'] = plot_df['time'].dt.date
         plot_df = plot_df.merge(sun_data, left_on='date_only', right_on='date')
-        # Only keep hours between sunrise and sunset
         plot_df = plot_df[(plot_df['time'] >= plot_df['sunrise']) & (plot_df['time'] <= plot_df['sunset'])]
 
     # --- PLOTTING ---
@@ -89,29 +88,30 @@ if data and 'hourly' in data:
                     fillcolor="gray", opacity=0.15, line_width=0
                 )
 
-    # 3. Add Day Separators (Specifically for Hidden Night Mode)
+    # 3. Add Day Separators (Hidden Night Mode) - FIXED TO PREVENT CRASH
     else:
-        # Find the very first data point for each day in the filtered set
-        day_starts = plot_df.groupby('date_only')['time'].first().iloc[1:] # Skip the first day
+        day_starts = plot_df.groupby('date_only')['time'].first().iloc[1:]
         for start_time in day_starts:
-            fig.add_vline(
-                x=start_time, 
-                line_width=2, 
-                line_color="black", 
-                opacity=0.8,
-                annotation_text="NEW DAY",
-                annotation_position="bottom right"
+            # Draw the Line
+            fig.add_shape(
+                type="line", x0=start_time, x1=start_time, y0=0, y1=1,
+                xref="x", yref="paper",
+                line=dict(color="black", width=1.5, dash="solid")
+            )
+            # Draw the Annotation separately
+            fig.add_annotation(
+                x=start_time, y=0, yref="paper",
+                text=" NEW DAY", showarrow=False, xanchor="left", yanchor="bottom",
+                font=dict(color="black", size=10)
             )
 
     # 4. Add Current Time Line ("NOW")
     if not plot_df.empty:
-        # Find index of closest time to now
         idx = (plot_df['time'] - now_nz).abs().idxmin()
         closest_time = plot_df.loc[idx, 'time']
         
         fig.add_shape(
-            type="line",
-            x0=closest_time, x1=closest_time, y0=0, y1=1,
+            type="line", x0=closest_time, x1=closest_time, y0=0, y1=1,
             xref="x", yref="paper",
             line=dict(color="green", width=2, dash="dot")
         )
@@ -126,13 +126,13 @@ if data and 'hourly' in data:
         hovermode="x unified",
         xaxis=dict(
             type='category' if hide_night else 'date',
-            tickformat="%a %I %p", # Shorter format for cleaner look
+            tickformat="%a %I %p",
             nticks=15,
             title=""
         ),
         yaxis=dict(title=unit, rangemode="tozero"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(t=80) # Add space for "NOW" label
+        margin=dict(t=80)
     )
 
     st.title(f"🌬️ {selection} Tracker")
