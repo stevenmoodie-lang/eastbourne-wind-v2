@@ -91,14 +91,27 @@ if data and 'hourly' in data:
     for d_date in day_df['date_only'].unique():
         group = day_df[day_df['date_only'] == d_date]
         center_idx = group.index[len(group)//2]
+        avg_knots = group['wind'].mean()
+        
+        # Day Header (Mon 11)
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
-        fig_top.add_annotation(x=center_idx, y=1.15, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
+        fig_top.add_annotation(x=center_idx, y=1.20, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
+        
+        # New: Average Knots overlay
+        fig_top.add_annotation(
+            x=center_idx, y=1.05, 
+            text=f"{avg_knots:.1f} kn avg", 
+            showarrow=False, 
+            font=dict(size=9, color="rgba(0,0,0,0.6)"), 
+            xanchor="center"
+        )
+        
         last_idx = group.index[-1]
         if last_idx < len(day_df) - 1:
             fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
 
     fig_top.update_layout(
-        height=120, margin=dict(t=30, b=5, l=5, r=5),
+        height=130, margin=dict(t=35, b=5, l=5, r=5),
         template="plotly_white", bargap=0,
         xaxis=dict(type='category', showticklabels=False),
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False)
@@ -145,14 +158,11 @@ if data and 'hourly' in data:
             showticklabels=True, 
             side="left", 
             tickfont=dict(size=8, color="gray"),
-            ticksuffix=" ", # Just a tiny gap
+            ticksuffix=" ",
             showgrid=True,
-            dtick=10,        # Label every 10 knots
+            dtick=10, 
             fixedrange=True,
-            layer="below traces",
-            tickmode="linear",
-            anchor="x",
-            position=0
+            layer="below traces"
         ), 
         bargap=0
     )
