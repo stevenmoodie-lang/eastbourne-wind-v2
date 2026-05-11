@@ -42,8 +42,9 @@ def get_weather_data(lat, lon, days):
 # --- SIDEBAR ---
 st.sidebar.title("⚙️ Settings")
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
-forecast_range = st.sidebar.radio("Forecast Range", ["3 Days", "7 Days"], index=0)
-days_to_fetch = 3 if forecast_range == "3 Days" else 7
+# Swapped order and set default index to 0 for 7 Days
+forecast_range = st.sidebar.radio("Forecast Range", ["7 Days", "3 Days"], index=0)
+days_to_fetch = 7 if forecast_range == "7 Days" else 3
 
 # --- DATA PROCESSING ---
 coords = STATIONS[selection]
@@ -108,15 +109,16 @@ if data and 'hourly' in data:
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
         
-        # Day Label (Responsive size)
-        label_size = 14 if days_to_fetch == 3 else 11
+        # Responsive Label Sizes
+        label_size = 11 if days_to_fetch == 7 else 14
+        moon_size = 15 if days_to_fetch == 7 else 20
+        
         fig.add_annotation(
-            x=midday, y=1.2, yref="y1",
+            x=midday, y=1.25, yref="y1",
             text=f"<b>{midday.strftime('%a %d %b')}</b>",
             showarrow=False, font=dict(size=label_size)
         )
         
-        # Moon icons
         if i < len(sun_data) - 1:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
@@ -124,9 +126,9 @@ if data and 'hourly' in data:
             
             fig.add_annotation(
                 x=mid_night, y=0.5, yref="y1",
-                text="🌙", showarrow=False, font=dict(size=18 if days_to_fetch == 3 else 14)
+                text="🌙", showarrow=False, font=dict(size=moon_size)
             )
-            # V-Rect Shading
+            
             fig.add_vrect(
                 x0=sunset, x1=sunrise_next,
                 fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1
@@ -142,7 +144,7 @@ if data and 'hourly' in data:
         template="plotly_white",
         hovermode="x unified",
         xaxis2=dict(showticklabels=True, title=""),
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.5], showgrid=False),
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.6], showgrid=False),
         yaxis2=dict(title="Knots", rangemode="tozero"),
         margin=dict(t=60, b=40, l=10, r=10),
         bargap=0
