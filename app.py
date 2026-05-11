@@ -39,6 +39,7 @@ def get_color(knots, opacity=1.0):
     if knots <= 28: return colors["red"]
     return colors["darkred"]
 
+@st.cache_data(ttl=600)
 def get_weather_data(lat, lon, days):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
@@ -51,6 +52,10 @@ def get_weather_data(lat, lon, days):
     return r.json() if r.status_code == 200 else None
 
 # --- SIDEBAR ---
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
+
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
 forecast_range = st.sidebar.radio("Range", ["7 Days", "3 Days"], index=0)
 days_to_fetch = 7 if forecast_range == "7 Days" else 3
@@ -105,25 +110,24 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
-    # Timeline row (Heatstrip) - Darker Grey for night
+    # Timeline row (Heatstrip) - Darker night grey
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
-                                marker_color="rgb(225,225,225)" if df['is_night'][i] else get_color(df['wind'][i]), 
+                                marker_color="rgb(210,210,210)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
     # Line graph row
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         is_segment_night = p1['is_night'] and p2['is_night']
-        line_opacity = 0.1 if is_segment_night else 1.0
-        line_width = 1.0 if is_segment_night else 2.5
+        line_opacity = 0.15 if is_segment_night else 1.0
+        line_width = 1.2 if is_segment_night else 2.5
         fig_bot.add_trace(go.Scatter(
             x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], 
             mode='lines', line=dict(color=get_color(p1['wind'], opacity=line_opacity), width=line_width), 
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # PEAKS, VALLEYS, and DAILY AVERAGES
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
@@ -148,7 +152,8 @@ if data and 'hourly' in data:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
             mid_night = sunset + (sunrise_next - sunset) / 2
-            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.05, line_width=0, row=2, col=1)
+            # Darkened the rectangular night shades behind the graph
+            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="black", opacity=0.08, line_width=0, row=2, col=1)
             fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
     idx_now = (df['time'] - now_nz).abs().idxmin()
