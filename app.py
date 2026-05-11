@@ -24,18 +24,19 @@ STATIONS = {
 }
 
 def get_color(knots, opacity=1.0):
+    # goldenrod is a much better "Dark Yellow" for white backgrounds
     colors = {
         "lightblue": f"rgba(173, 216, 230, {opacity})",
         "dodgerblue": f"rgba(30, 144, 255, {opacity})",
         "green": f"rgba(0, 128, 0, {opacity})",
-        "yellow": f"rgba(255, 255, 0, {opacity})",
+        "darkyellow": f"rgba(218, 165, 32, {opacity})",
         "red": f"rgba(255, 0, 0, {opacity})",
         "darkred": f"rgba(139, 0, 0, {opacity})"
     }
     if knots < 5: return colors["lightblue"]
     if knots <= 10: return colors["dodgerblue"]
     if knots <= 15: return colors["green"]
-    if knots <= 19: return colors["yellow"]
+    if knots <= 19: return colors["darkyellow"]
     if knots <= 28: return colors["red"]
     return colors["darkred"]
 
@@ -106,13 +107,11 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
-    # Heatstrip row
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
                                 marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
-    # Line graph row
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         is_segment_night = p1['is_night'] and p2['is_night']
@@ -124,18 +123,15 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # --- REFINED PEAKS AND VALLEYS (Max/Min per day) ---
+    # REFINED PEAKS AND VALLEYS 
     for d_date in df['date_only'].unique():
-        # Only look at daylight hours for that day
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
             valley = day_block.loc[day_block['wind'].idxmin()]
             
-            # Label Peak (Mountain)
             fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
                                    showarrow=False, yshift=12, font=dict(size=10, color="black"), row=2, col=1)
-            # Label Valley (if different from peak)
             if peak['time'] != valley['time']:
                 fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
                                        showarrow=False, yshift=-12, font=dict(size=10, color="gray"), row=2, col=1)
