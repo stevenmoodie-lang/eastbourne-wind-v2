@@ -115,10 +115,10 @@ if data and 'hourly' in data:
         rows=3, cols=1, 
         shared_xaxes=False, 
         vertical_spacing=0.0, 
-        row_heights=[0.015, 0.20, 0.20] # Heatstrip reduced by half (0.03 -> 0.015)
+        row_heights=[0.015, 0.20, 0.10] # Tide reduced by half (0.20 -> 0.10)
     )
     
-    # 1. Hourly Direction Row (The thin heatstrip)
+    # 1. Hourly Direction Row
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
         for s in range(3):
@@ -144,7 +144,7 @@ if data and 'hourly' in data:
             fig_bot.add_annotation(x=v['time'], y=v['wind'], text=f"<b>{round(v['wind'])}</b>", showarrow=False, yshift=-12, xshift=-8, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
             fig_bot.add_annotation(x=v['time'], y=v['wind'], text="➤", textangle=v['dir']-90, showarrow=False, yshift=-12, xshift=8, font=dict(size=8, color="#d1d9e0"), row=2, col=1)
 
-    # 3. Tide Row (20%)
+    # 3. Tide Row (10%)
     fig_bot.add_trace(go.Scatter(x=tide_df['time'], y=tide_df['height'], fill='tozeroy', mode='lines', line=dict(color='#5dade2', width=1.1), fillcolor='rgba(93, 173, 226, 0.12)', showlegend=False, hoverinfo='none'), row=3, col=1)
     
     t_vals = tide_df['height'].values
