@@ -72,7 +72,7 @@ try:
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
     max_wind = df_hourly['speed'].max()
 
-    # --- 1. SLIMMED ARROW RIBBON ---
+    # --- 1. MINIMAL ARROW RIBBON ---
     segments = []
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -94,23 +94,23 @@ try:
             continue
         fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False))
         heading = (s['dir'] + 180) % 360
-        # Shrinking arrowhead size to 9 and speed text to 8
-        fig_ribbon.add_annotation(x=s['x_id'], y=0.5, text="➤", showarrow=False, textangle=heading-90, font=dict(size=9, color="white"))
-        fig_ribbon.add_annotation(x=s['x_id'], y=-0.4, text=f"<b>{round(s['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"))
+        # Reduced arrowhead to size 7 and speed text to 7
+        # Restored vertical centering using y=0.5 for arrow and y=0.15 for text
+        fig_ribbon.add_annotation(x=s['x_id'], y=0.5, text="➤", showarrow=False, textangle=heading-90, font=dict(size=7, color="white"))
+        fig_ribbon.add_annotation(x=s['x_id'], y=0.15, text=f"<b>{round(s['speed'])}</b>", showarrow=False, font=dict(size=7, color="white"))
 
     fig_ribbon.update_layout(
-        height=90, margin=dict(l=5, r=5, t=25, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0,
+        height=70, margin=dict(l=5, r=5, t=25, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0,
         xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], 
                    ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], side="top", 
-                   tickfont=dict(size=10, color="white"), fixedrange=True),
-        yaxis=dict(visible=False, range=[-0.8, 1.2], fixedrange=True)
+                   tickfont=dict(size=9, color="white"), fixedrange=True),
+        yaxis=dict(visible=False, range=[0, 1], fixedrange=True)
     )
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
     # --- 2. COMPACT WIND & TIDE DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
-    # Wind Lines
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
@@ -129,21 +129,16 @@ try:
                 mode='lines', showlegend=False, hoverinfo='skip'
             ), row=1, col=1)
 
-    # Days & Tide Markers
     for _, day_sun in df_sun.iterrows():
         midpoint = day_sun['sunrise'] + (day_sun['sunset'] - day_sun['sunrise']) / 2
-        fig_main.add_annotation(
-            x=midpoint, y=max_wind + 6, text=f"<b>{day_sun['date'].strftime('%a')}</b>",
-            showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.6)"), row=1, col=1
-        )
+        fig_main.add_annotation(x=midpoint, y=max_wind + 6, text=f"<b>{day_sun['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.6)"), row=1, col=1)
         day_mask = (df_hourly['time'] >= day_sun['sunrise']) & (df_hourly['time'] <= day_sun['sunset'])
         day_data = df_hourly[day_mask]
         if not day_data.empty:
-            for func, offset in [(day_data.loc[day_data['speed'].idxmax()], 3.5), 
-                                 (day_data.loc[day_data['speed'].idxmin()], -3.5)]:
+            for func, offset in [(day_data.loc[day_data['speed'].idxmax()], 3.5), (day_data.loc[day_data['speed'].idxmin()], -3.5)]:
                 heading = (func['dir'] + 180) % 360
-                fig_main.add_annotation(x=func['time'], y=func['speed'] + (offset/2.5), text="➤", textangle=heading-90, showarrow=False, font=dict(size=7, color="white"), row=1, col=1)
-                fig_main.add_annotation(x=func['time'], y=func['speed'] + offset, text=f"<b>{round(func['speed'])}</b>", showarrow=False, font=dict(size=9, color="white"), row=1, col=1)
+                fig_main.add_annotation(x=func['time'], y=func['speed'] + (offset/2.5), text="➤", textangle=heading-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
+                fig_main.add_annotation(x=func['time'], y=func['speed'] + offset, text=f"<b>{round(func['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
     fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.05)', line=dict(color='#00d4ff', width=1), showlegend=False, hoverinfo='skip'), row=2, col=1)
     
@@ -151,8 +146,7 @@ try:
         prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
             t = df_tide.iloc[i]
-            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, 
-                                    font=dict(size=7, color="#00d4ff"), yshift=6 if curr > prev else -6, row=2, col=1)
+            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color="#00d4ff"), yshift=6 if curr > prev else -6, row=2, col=1)
 
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
@@ -160,8 +154,7 @@ try:
 
     fig_main.update_layout(
         height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False, fixedrange=False),
-        xaxis2=dict(visible=False, fixedrange=False),
+        xaxis=dict(visible=False, fixedrange=False), xaxis2=dict(visible=False, fixedrange=False),
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 10]),
         yaxis2=dict(showgrid=False, zeroline=False, fixedrange=True, showticklabels=False, range=[0, 2.2])
     )
