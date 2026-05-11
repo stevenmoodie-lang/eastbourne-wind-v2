@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, time
 import pytz
+import numpy as np
 
 # --- PAGE CONFIG & CSS ---
 st.set_page_config(page_title="Wind Tracker", layout="wide")
@@ -85,48 +86,33 @@ if data and 'hourly' in data:
         marker_color=[get_color(w) for w in day_df['wind']],
         marker_line_width=0, showlegend=False,
         customdata=day_df['wind'],
-        hovertemplate='%{x}:00<br>%{customdata:.0f} kn<extra></extra>'
+        hovertemplate='%{x}:00<br>%{customdata:.1f} kn<extra></extra>'
     ))
 
     for d_date in day_df['date_only'].unique():
         group = day_df[day_df['date_only'] == d_date]
         center_idx = group.index[len(group)//2]
-        
-        # Calculate Rounded Average
         avg_knots = round(group['wind'].mean())
-        
-        # Day Header
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
         fig_top.add_annotation(x=center_idx, y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
-        
-        # Average text INSIDE the color box with 'kn' suffix
-        fig_top.add_annotation(
-            x=center_idx, y=0.5, 
-            text=f"<b>{avg_knots} kn</b>", 
-            showarrow=False, 
-            font=dict(size=13, color="white"), 
-            xanchor="center"
-        )
+        fig_top.add_annotation(x=center_idx, y=0.5, text=f"<b>{avg_knots} kn</b>", showarrow=False, font=dict(size=13), color="white", xanchor="center")
         
         last_idx = group.index[-1]
         if last_idx < len(day_df) - 1:
             fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
 
-    fig_top.update_layout(
-        height=125, margin=dict(t=35, b=5, l=5, r=5),
-        template="plotly_white", bargap=0,
-        xaxis=dict(type='category', showticklabels=False),
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False)
-    )
+    fig_top.update_layout(height=125, margin=dict(t=35, b=5, l=5, r=5), template="plotly_white", bargap=0, xaxis=dict(type='category', showticklabels=False), yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False))
 
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
+    # Heatstrip row
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
                                 marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
+    # Line graph row
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         is_segment_night = p1['is_night'] and p2['is_night']
@@ -137,6 +123,23 @@ if data and 'hourly' in data:
             mode='lines', line=dict(color=get_color(p1['wind'], opacity=line_opacity), width=line_width), 
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
+
+    # PEAKS AND VALLEYS LOGIC
+    # Only label daylight points to keep it clean
+    for i in range(1, len(df)-1):
+        if not df.iloc[i]['is_night']:
+            prev_w = df.iloc[i-1]['wind']
+            curr_w = df.iloc[i]['wind']
+            next_w = df.iloc[i+1]['wind']
+            
+            # Local Maxima (Mountain)
+            if curr_w > prev_w and curr_w >= next_w:
+                fig_bot.add_annotation(x=df.iloc[i]['time'], y=curr_w, text=str(round(curr_w)), 
+                                       showarrow=False, yshift=10, font=dict(size=9, color="black"), row=2, col=1)
+            # Local Minima (Valley)
+            elif curr_w < prev_w and curr_w <= next_w:
+                fig_bot.add_annotation(x=df.iloc[i]['time'], y=curr_w, text=str(round(curr_w)), 
+                                       showarrow=False, yshift=-10, font=dict(size=9, color="gray"), row=2, col=1)
 
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
@@ -156,16 +159,7 @@ if data and 'hourly' in data:
         template="plotly_white", hovermode="x unified",
         xaxis2=dict(showticklabels=False), 
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False),
-        yaxis2=dict(
-            showticklabels=True, 
-            side="left", 
-            tickfont=dict(size=8, color="gray"),
-            ticksuffix=" ",
-            showgrid=True,
-            dtick=10, 
-            fixedrange=True,
-            layer="below traces"
-        ), 
+        yaxis2=dict(showticklabels=True, side="left", tickfont=dict(size=8, color="gray"), showgrid=True, dtick=10, fixedrange=True, layer="below traces"), 
         bargap=0
     )
 
