@@ -48,7 +48,6 @@ def get_weather_data():
         "latitude": -41.405, "longitude": 174.867, 
         "hourly": ["wind_speed_10m", "wind_direction_10m"], 
         "daily": ["sunrise", "sunset"], 
-        "past_days": 3,
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
     r = requests.get(url, params=params).json()
@@ -73,32 +72,40 @@ try:
         return False
 
     # --- 1. RIBBON ---
-    # (Ribbon code remains the same as it correctly uses the daily forecast dataframe)
     fig_ribbon = go.Figure()
-    # ... [Ribbon trace logic] ...
-    # (I've kept this section internal to focus on the fix below)
+    for _, day in df_sun.iterrows():
+        sunrise, sunset = day['sunrise'], day['sunset']
+        seg_dur = (sunset - sunrise) / 3
+        for i in range(3):
+            t0, t1 = sunrise + (i*seg_dur), sunrise + ((i+1)*seg_dur)
+            d = df_hourly[(df_hourly['time'] >= t0) & (df_hourly['time'] < t1)]
+            if not d.empty:
+                x_id = f"{day['date']}_{i}"
+                fig_ribbon.add_trace(go.Bar(x=[x_id], y=[1], marker=dict(color=get_color(d['speed'].mean()), line=dict(width=0)), showlegend=False))
+                fig_ribbon.add_annotation(x=x_id, y=0.5, text="➤", showarrow=False, textangle=((d['dir'].mean()+180)%360)-90, font=dict(size=7, color="white"))
+                fig_ribbon.add_annotation(x=x_id, y=-0.3, text=f"<b>{round(d['speed'].mean())}</b>", showarrow=False, font=dict(size=7, color="white"))
+        fig_ribbon.add_trace(go.Bar(x=[f"{day['date']}_sp"], y=[1], marker=dict(color="rgba(0,0,0,0)", line=dict(width=0)), showlegend=False))
+
+    fig_ribbon.update_layout(height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0, xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], side="top", tickfont=dict(size=9, color="white")), yaxis=dict(visible=False, fixedrange=True))
+    st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
     # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # NIGHT SHADING: Corrected to handle historical dates (Tue/Wed)
+    # RELIABLE NIGHT SHADING: Full Scan
     night_shapes = []
-    # Loop through every date present in the hourly data to ensure no days are skipped
-    unique_dates = pd.to_datetime(df_hourly['time']).dt.date.unique()
-    
-    for d in unique_dates:
-        sun_row = df_sun[df_sun['date'] == d]
-        if not sun_row.empty:
-            sunrise = sun_row.iloc[0]['sunrise']
-            sunset = sun_row.iloc[0]['sunset']
-            
-            # Pre-sunrise shading
-            day_start = pd.Timestamp(d)
-            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=day_start, x1=sunrise, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.4)", layer="below", line_width=0))
-            
-            # Post-sunset shading
-            day_end = day_start + pd.Timedelta(days=1)
-            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=sunset, x1=day_end, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.4)", layer="below", line_width=0))
+    check_times = pd.date_range(all_time_min, all_time_max, freq='1h')
+    current_night_start = None
+
+    for t in check_times:
+        if not check_daylight(t, df_sun):
+            if current_night_start is None: current_night_start = t
+        else:
+            if current_night_start is not None:
+                night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_night_start, x1=t, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
+                current_night_start = None
+    if current_night_start:
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_night_start, x1=all_time_max, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
 
     # Wind Lines
     for i in range(len(df_hourly)-1):
@@ -111,14 +118,17 @@ try:
     fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.7)", width=1.3), fill='tozeroy', fillcolor="rgba(255,255,255,0.15)", mode='lines', showlegend=False), row=2, col=1)
 
     # UI Labels
-    # (Label logic remains the same)
+    for _, day in df_sun.iterrows():
+        midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
+        fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{day['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.7)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunrise'], y=-4.5, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunset'], y=-4.5, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
 
     # Tide Peak Times
     for i in range(1, len(df_tide)-1):
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
             t = df_tide.iloc[i]
-            # Use original high-visibility labels
             fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8, color="white"), yshift=10 if c > p else -10, row=2, col=1)
 
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
