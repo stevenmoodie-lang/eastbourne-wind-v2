@@ -24,19 +24,19 @@ STATIONS = {
 }
 
 def get_color(knots, opacity=1.0):
-    # goldenrod is a much better "Dark Yellow" for white backgrounds
+    # Lighter goldenrod (rgb 238, 195, 82) for better visibility.
     colors = {
         "lightblue": f"rgba(173, 216, 230, {opacity})",
         "dodgerblue": f"rgba(30, 144, 255, {opacity})",
         "green": f"rgba(0, 128, 0, {opacity})",
-        "darkyellow": f"rgba(218, 165, 32, {opacity})",
+        "goldenrod_light": f"rgba(238, 195, 82, {opacity})", # Lightened up by ~15%
         "red": f"rgba(255, 0, 0, {opacity})",
         "darkred": f"rgba(139, 0, 0, {opacity})"
     }
     if knots < 5: return colors["lightblue"]
     if knots <= 10: return colors["dodgerblue"]
     if knots <= 15: return colors["green"]
-    if knots <= 19: return colors["darkyellow"]
+    if knots <= 19: return colors["goldenrod_light"]
     if knots <= 28: return colors["red"]
     return colors["darkred"]
 
@@ -76,33 +76,67 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- 1. TOP GRAPH: DAYLIGHT FOCUS ---
+    # --- 1. TOP GRAPH: DAYLIGHT FOCUS (With Rounded Squares) ---
     day_df = df[~df['is_night']].copy().reset_index(drop=True)
-    day_df['time_str'] = day_df['time'].dt.strftime('%a %H') 
-
+    
     fig_top = go.Figure()
-    fig_top.add_trace(go.Bar(
-        x=day_df['time_str'], y=[1] * len(day_df),
-        marker_color=[get_color(w) for w in day_df['wind']],
-        marker_line_width=0, showlegend=False,
-        customdata=day_df['wind'],
-        hovertemplate='%{x}:00<br>%{customdata:.1f} kn<extra></extra>'
-    ))
-
-    for d_date in day_df['date_only'].unique():
+    
+    # Calculate unique x positions and dynamic marker size
+    num_bars = len(day_df)
+    unique_dates = day_df['date_only'].unique()
+    
+    for d_date in unique_dates:
         group = day_df[day_df['date_only'] == d_date]
-        center_idx = group.index[len(group)//2]
-        avg_knots = round(group['wind'].mean())
+        
+        # Draw daylight squares with rounded corners
+        fig_top.add_trace(go.Scatter(
+            x=group['time'],
+            y=[1] * len(group),
+            mode='markers+text',
+            name=str(d_date),
+            marker=dict(
+                color=[get_color(w) for w in group['wind']],
+                symbol='square', # Base shape
+                size=26,        # Adjust size to fill the width (calculated for 7 days)
+                cornerradius=8, # FIXED: Add rounded corners
+                line=dict(color='white', width=2) # Add white space between blocks
+            ),
+            text=[f"<b>{round(w)}</b>" for w in group['wind']],
+            textposition='middle center',
+            textfont=dict(size=12, color='white'), # Match previous style
+            showlegend=False,
+            hoverinfo='none', # Turn off standard hover as we have text/vlines
+        ))
+
+        # Add Day Header
+        center_time = group['time'].iloc[len(group)//2]
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
         
-        fig_top.add_annotation(x=center_idx, y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
-        fig_top.add_annotation(x=center_idx, y=0.5, text=f"<b>{avg_knots} kn</b>", showarrow=False, font=dict(size=13, color="white"), xanchor="center")
+        fig_top.add_annotation(x=center_time, y=1.28, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
         
-        last_idx = group.index[-1]
-        if last_idx < len(day_df) - 1:
-            fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
+        # Day Separator (Wide white line)
+        last_time = group['time'].iloc[-1]
+        # Calculate separation (1 hour)
+        sep_time = last_time + pd.Timedelta(hours=1)
+        if sep_time < day_df['time'].iloc[-1]:
+            fig_top.add_vline(x=last_time + pd.Timedelta(minutes=30), line_width=12, line_color="white", opacity=1)
 
-    fig_top.update_layout(height=125, margin=dict(t=35, b=5, l=5, r=5), template="plotly_white", bargap=0, xaxis=dict(type='category', showticklabels=False), yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False))
+    fig_top.update_layout(
+        height=125, 
+        margin=dict(t=35, b=0, l=5, r=5), 
+        template="plotly_white", 
+        xaxis=dict(
+            showticklabels=False, 
+            type='date', 
+            showgrid=False,
+            # Force dtick to 1 hour to align marks with separation vlines
+            dtick=3600000, 
+            # Expand slightly to fit standard markers on first/last day
+            range=[day_df['time'].min() - pd.Timedelta(minutes=30), day_df['time'].max() + pd.Timedelta(minutes=30)]
+        ), 
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0.4, 1.4], showgrid=False), # Center the squares
+        bargap=0
+    )
 
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
