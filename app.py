@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, time
 import pytz
-import numpy as np
 
 # --- PAGE CONFIG & CSS ---
 st.set_page_config(page_title="Wind Tracker", layout="wide")
@@ -93,20 +92,10 @@ if data and 'hourly' in data:
         group = day_df[day_df['date_only'] == d_date]
         center_idx = group.index[len(group)//2]
         avg_knots = round(group['wind'].mean())
-        
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
         
-        # Day Header
         fig_top.add_annotation(x=center_idx, y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
-        
-        # FIXED: Avg Knots inside box (Color moved inside font dict)
-        fig_top.add_annotation(
-            x=center_idx, y=0.5, 
-            text=f"<b>{avg_knots} kn</b>", 
-            showarrow=False, 
-            font=dict(size=13, color="white"), 
-            xanchor="center"
-        )
+        fig_top.add_annotation(x=center_idx, y=0.5, text=f"<b>{avg_knots} kn</b>", showarrow=False, font=dict(size=13, color="white"), xanchor="center")
         
         last_idx = group.index[-1]
         if last_idx < len(day_df) - 1:
@@ -135,19 +124,21 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # PEAKS AND VALLEYS 
-    for i in range(1, len(df)-1):
-        if not df.iloc[i]['is_night']:
-            prev_w = df.iloc[i-1]['wind']
-            curr_w = df.iloc[i]['wind']
-            next_w = df.iloc[i+1]['wind']
+    # --- REFINED PEAKS AND VALLEYS (Max/Min per day) ---
+    for d_date in df['date_only'].unique():
+        # Only look at daylight hours for that day
+        day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
+        if not day_block.empty:
+            peak = day_block.loc[day_block['wind'].idxmax()]
+            valley = day_block.loc[day_block['wind'].idxmin()]
             
-            if curr_w > prev_w and curr_w >= next_w:
-                fig_bot.add_annotation(x=df.iloc[i]['time'], y=curr_w, text=str(round(curr_w)), 
-                                       showarrow=False, yshift=10, font=dict(size=9, color="black"), row=2, col=1)
-            elif curr_w < prev_w and curr_w <= next_w:
-                fig_bot.add_annotation(x=df.iloc[i]['time'], y=curr_w, text=str(round(curr_w)), 
-                                       showarrow=False, yshift=-10, font=dict(size=9, color="gray"), row=2, col=1)
+            # Label Peak (Mountain)
+            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
+                                   showarrow=False, yshift=12, font=dict(size=10, color="black"), row=2, col=1)
+            # Label Valley (if different from peak)
+            if peak['time'] != valley['time']:
+                fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
+                                       showarrow=False, yshift=-12, font=dict(size=10, color="gray"), row=2, col=1)
 
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
