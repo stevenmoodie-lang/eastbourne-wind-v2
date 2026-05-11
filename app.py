@@ -13,7 +13,7 @@ st.markdown("""
     <style>
         .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
         h1 { font-size: 1.5rem !important; margin-bottom: 0px !important; }
-        .stPlotlyChart { margin-bottom: 10px !important; } 
+        .stPlotlyChart { margin-bottom: 5px !important; } 
     </style>
 """, unsafe_allow_html=True)
 
@@ -23,13 +23,23 @@ STATIONS = {
     "Wellington Airport": {"lat": -41.327, "lon": 174.805}
 }
 
-def get_color(knots):
-    if knots < 5: return "lightblue"
-    if knots <= 10: return "dodgerblue"
-    if knots <= 15: return "green"
-    if knots <= 19: return "yellow"
-    if knots <= 28: return "red"
-    return "darkred"
+def get_color(knots, opacity=1.0):
+    # Convert named colors to RGBA to allow dimming
+    colors = {
+        "lightblue": f"rgba(173, 216, 230, {opacity})",
+        "dodgerblue": f"rgba(30, 144, 255, {opacity})",
+        "green": f"rgba(0, 128, 0, {opacity})",
+        "yellow": f"rgba(255, 255, 0, {opacity})",
+        "red": f"rgba(255, 0, 0, {opacity})",
+        "darkred": f"rgba(139, 0, 0, {opacity})"
+    }
+    
+    if knots < 5: return colors["lightblue"]
+    if knots <= 10: return colors["dodgerblue"]
+    if knots <= 15: return colors["green"]
+    if knots <= 19: return colors["yellow"]
+    if knots <= 28: return colors["red"]
+    return colors["darkred"]
 
 def get_weather_data(lat, lon, days):
     url = "https://api.open-meteo.com/v1/forecast"
@@ -93,9 +103,9 @@ if data and 'hourly' in data:
         prev_date = current_date
 
     fig_top.update_layout(
-        height=120, margin=dict(t=30, b=5, l=5, r=5), # Reduced height and bottom margin
+        height=120, margin=dict(t=30, b=5, l=5, r=5),
         template="plotly_white", bargap=0,
-        xaxis=dict(type='category', showticklabels=False), # Removed day/time labels
+        xaxis=dict(type='category', showticklabels=False),
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False),
         title=dict(text="<b>Daylight Focus</b>", font=dict(size=11), x=0.01)
     )
@@ -103,15 +113,25 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
+    # Heatstrip row
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
                                 marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
+    # Line graph row with dimmed night lines
     for i in range(len(df)-1):
-        fig_bot.add_trace(go.Scatter(x=[df['time'][i], df['time'][i+1]], y=[df['wind'][i], df['wind'][i+1]], 
-                                     mode='lines', line=dict(color=get_color(df['wind'][i]), width=2.5), 
-                                     showlegend=False, hoverinfo='none'), row=2, col=1)
+        p1, p2 = df.iloc[i], df.iloc[i+1]
+        is_segment_night = p1['is_night'] and p2['is_night']
+        line_opacity = 0.25 if is_segment_night else 1.0
+        line_width = 1.5 if is_segment_night else 2.5
+        
+        fig_bot.add_trace(go.Scatter(
+            x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], 
+            mode='lines', 
+            line=dict(color=get_color(p1['wind'], opacity=line_opacity), width=line_width), 
+            showlegend=False, hoverinfo='none'
+        ), row=2, col=1)
 
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
@@ -125,7 +145,7 @@ if data and 'hourly' in data:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
             mid_night = sunset + (sunrise_next - sunset) / 2
-            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1)
+            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.08, line_width=0, row=2, col=1)
             fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
     idx_now = (df['time'] - now_nz).abs().idxmin()
@@ -143,7 +163,7 @@ if data and 'hourly' in data:
     # --- RENDER ---
     st.title(f"🌬️ {selection}: {df.loc[idx_now, 'wind']:.1f} kn")
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
-    st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
 
 else:
