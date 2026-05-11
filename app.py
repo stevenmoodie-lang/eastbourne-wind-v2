@@ -104,22 +104,23 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.12, 0.88])
     
-    # ROW 1: 3-Hourly Heatstrip with Arrows
-    df_3h = df.resample('3h', on='time').agg({'wind': 'mean', 'dir': 'mean'}).reset_index()
+    # ROW 1: 4-Hourly Heatstrip with Arrows
+    # origin='start_day' ensures we align with midnight
+    df_4h = df.resample('4h', on='time', origin='start_day').agg({'wind': 'mean', 'dir': 'mean'}).reset_index()
     
-    for _, row in df_3h.iterrows():
-        # Draw 3-hour colored bar
+    for _, row in df_4h.iterrows():
+        # Draw 4-hour colored bar
         fig_bot.add_trace(go.Bar(
-            x=[row['time'] + timedelta(hours=1.5)], 
+            x=[row['time'] + timedelta(hours=2)], 
             y=[1], 
-            width=1000*3600*3, # 3 hours in ms
+            width=1000*3600*4, # 4 hours in ms
             marker_color=get_color(row['wind']),
             showlegend=False, hoverinfo='none'
         ), row=1, col=1)
         
         # Add arrow inside the bar
         fig_bot.add_annotation(
-            x=row['time'] + timedelta(hours=1.5), y=0.5, yref="y1",
+            x=row['time'] + timedelta(hours=2), y=0.5, yref="y1",
             text="➤", textangle=row['dir']-90,
             showarrow=False, font=dict(size=14, color="white"),
             row=1, col=1
@@ -157,3 +158,6 @@ if data and 'hourly' in data:
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
+
+else:
+    st.error("Error loading data")
