@@ -124,20 +124,20 @@ if data and 'hourly' in data:
         fig_top.add_annotation(x=str(row['date_only']), y=0.2, text="➤", textangle=row['dir']-90, showarrow=False, font=dict(size=12, color="rgba(255,255,255,0.8)"))
 
     fig_top.update_layout(
-        height=110, margin=dict(t=35, b=0, l=5, r=5), 
+        height=100, margin=dict(t=30, b=0, l=5, r=5), 
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         bargap=0.05, xaxis=dict(showticklabels=False, showgrid=False, zeroline=False), 
         yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False, zeroline=False)
     )
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. DETAILED GRAPHS (ULTRA COMPRESSED) ---
+    # --- 2. DETAILED GRAPHS (MAX COMPRESSION) ---
     fig_bot = make_subplots(
-        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.04, 
-        row_heights=[0.05, 0.55, 0.4] # Ultra-slim top heatstrip
+        rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, 
+        row_heights=[0.05, 0.50, 0.35] # Flattened wind (row 2) and tide (row 3)
     )
     
-    # 3-segment Heatblocks (Row 1) - Slimmer with smaller arrows
+    # 3-segment Heatblocks (Row 1)
     heat_blocks = []
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
@@ -163,8 +163,7 @@ if data and 'hourly' in data:
             x=[mid_point], y=[1], width=(b['end'] - b['time']).total_seconds() * 1000, 
             marker_color=block_color, showlegend=False, hoverinfo='none'
         ), row=1, col=1)
-        # Smaller arrow for slim strip
-        fig_bot.add_annotation(x=mid_point, y=0.5, yref="y1", text="➤", textangle=b['dir']-90, showarrow=False, font=dict(size=10, color="white" if not b['is_night'] else "rgba(255,255,255,0.1)"), row=1, col=1)
+        fig_bot.add_annotation(x=mid_point, y=0.5, yref="y1", text="➤", textangle=b['dir']-90, showarrow=False, font=dict(size=9, color="white" if not b['is_night'] else "rgba(255,255,255,0.1)"), row=1, col=1)
 
     # Wind Line (Row 2)
     for i in range(len(df)-1):
@@ -172,46 +171,46 @@ if data and 'hourly' in data:
         op = 0.2 if (p1['is_night'] and p2['is_night']) else 1.0
         fig_bot.add_trace(go.Scatter(
             x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], 
-            mode='lines', line=dict(color=get_color(p1['wind'], opacity=op), width=2.5), 
+            mode='lines', line=dict(color=get_color(p1['wind'], opacity=op), width=2), 
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Wind Peak/Valley Labels with Arrows
+    # Balanced Labels (Optimized for flat graph)
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
             fig_bot.add_annotation(
                 x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
-                showarrow=False, yshift=12, xshift=-7, font=dict(size=10, color="white"), row=2, col=1
+                showarrow=False, yshift=10, xshift=-7, font=dict(size=10, color="white"), row=2, col=1
             )
             fig_bot.add_annotation(
                 x=peak['time'], y=peak['wind'], text="➤", textangle=peak['dir']-90, 
-                showarrow=False, yshift=12, xshift=7, font=dict(size=8, color="white"), row=2, col=1
+                showarrow=False, yshift=10, xshift=7, font=dict(size=8, color="white"), row=2, col=1
             )
             valley = day_block.loc[day_block['wind'].idxmin()]
             fig_bot.add_annotation(
                 x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
-                showarrow=False, yshift=-12, xshift=-7, font=dict(size=10, color="#d1d9e0"), row=2, col=1
+                showarrow=False, yshift=-10, xshift=-7, font=dict(size=10, color="#d1d9e0"), row=2, col=1
             )
             fig_bot.add_annotation(
                 x=valley['time'], y=valley['wind'], text="➤", textangle=valley['dir']-90, 
-                showarrow=False, yshift=-12, xshift=7, font=dict(size=8, color="#d1d9e0"), row=2, col=1
+                showarrow=False, yshift=-10, xshift=7, font=dict(size=8, color="#d1d9e0"), row=2, col=1
             )
 
     # Tide Silhouette (Row 3)
     fig_bot.add_trace(go.Scatter(
         x=tide_df['time'], y=tide_df['height'], fill='tozeroy', mode='lines',
-        line=dict(color='#5dade2', width=1.5), fillcolor='rgba(93, 173, 226, 0.15)',
+        line=dict(color='#5dade2', width=1.2), fillcolor='rgba(93, 173, 226, 0.15)',
         showlegend=False, hoverinfo='none'
     ), row=3, col=1)
 
     tide_vals = tide_df['height'].values
     for i in range(1, len(tide_vals) - 1):
         if tide_vals[i] > tide_vals[i-1] and tide_vals[i] > tide_vals[i+1]:
-            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), showarrow=False, yshift=8, font=dict(size=9, color="#5dade2"), row=3, col=1)
+            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%H:%M'), showarrow=False, yshift=6, font=dict(size=8, color="#5dade2"), row=3, col=1)
         if tide_vals[i] < tide_vals[i-1] and tide_vals[i] < tide_vals[i+1]:
-            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), showarrow=False, yshift=-8, font=dict(size=9, color="#d1d9e0"), row=3, col=1)
+            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%H:%M'), showarrow=False, yshift=-6, font=dict(size=8, color="#d1d9e0"), row=3, col=1)
 
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.35, line_width=0, row="all")
@@ -220,8 +219,8 @@ if data and 'hourly' in data:
     tick_text = [f"<b>{pd.to_datetime(d).strftime('%a')}</b>" for d in df['date_only'].unique()]
 
     fig_bot.update_layout(
-        height=500, # Further reduced overall height
-        margin=dict(t=10, b=10, l=5, r=5), template="plotly_dark", 
+        height=420, # Ultra-compact height for mobile
+        margin=dict(t=5, b=5, l=5, r=5), template="plotly_dark", 
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False, zeroline=False),
         yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.05)", zeroline=False),
