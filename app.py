@@ -43,18 +43,19 @@ nz_tz = pytz.timezone('Pacific/Auckland')
 now_nz = datetime.now(nz_tz).replace(tzinfo=None)
 
 if data and 'hourly' in data:
+    # Force 'time' into a Series to ensure .dt access
     df = pd.DataFrame({
-        'time': pd.to_datetime(data['hourly']['time']),
+        'time': pd.Series(pd.to_datetime(data['hourly']['time'])),
         'wind': data['hourly']['wind_speed_10m']
     })
 
     if unit == "knots":
         df['wind'] *= 0.539957
 
-    # Process Sun Data
+    # Process Sun Data safely
     daily = data['daily']
     sun_data = pd.DataFrame({
-        'date': pd.to_datetime(daily['time']).dt.date, 
+        'date': pd.Series(pd.to_datetime(daily['time'])).dt.date, 
         'sunrise': pd.to_datetime(daily['sunrise']),
         'sunset': pd.to_datetime(daily['sunset'])
     })
@@ -88,13 +89,13 @@ if data and 'hourly' in data:
                     fillcolor="gray", opacity=0.15, line_width=0
                 )
 
-    # 3. Add Day Separators (Works for both modes now)
-    # Detect where the date changes from one row to the next
+    # 3. Add Day Separators
+    # Logic: Detect where the date value changes between rows
     plot_df['date_val'] = plot_df['time'].dt.date
     date_switches = plot_df[plot_df['date_val'] != plot_df['date_val'].shift(1)].index.tolist()
     
     for idx in date_switches:
-        if idx == 0: continue # Skip the very beginning of the chart
+        if idx == 0: continue # Skip the start of the chart
         
         switch_time = plot_df.loc[idx, 'time']
         
@@ -106,7 +107,7 @@ if data and 'hourly' in data:
         fig.add_annotation(
             x=switch_time, y=0.02, yref="paper",
             text=f" {switch_time.strftime('%a')}", showarrow=False, 
-            xanchor="left", font=dict(color="black", size=12, bold=True)
+            xanchor="left", font=dict(color="black", size=12)
         )
 
     # 4. Add Current Time Line ("NOW")
