@@ -107,9 +107,9 @@ try:
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
     # --- 2. THE COMPRESSED WIND & TIDE DASHBOARD ---
-    fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.40, 0.20])
+    fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.40, 0.20])
 
-    # Precise Line Coloring with Sunrise/Sunset splits
+    # Precise Line Coloring
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
@@ -132,12 +132,12 @@ try:
                 mode='lines', showlegend=False, hoverinfo='skip'
             ), row=1, col=1)
 
-    # Daytime Labels & Day Names (Centered)
+    # Daytime Labels & Day Names (At Top)
     for _, day_sun in df_sun.iterrows():
-        # Day name centered over daylight section
         midpoint = day_sun['sunrise'] + (day_sun['sunset'] - day_sun['sunrise']) / 2
+        # Moved to y=1.2 to sit clearly above the graph
         fig_main.add_annotation(
-            x=midpoint, y=1.1, xref="x", yref="paper", text=f"<b>{day_sun['date'].strftime('%a')}</b>",
+            x=midpoint, y=1.2, xref="x", yref="paper", text=f"<b>{day_sun['date'].strftime('%a')}</b>",
             showarrow=False, font=dict(size=13, color="white"), row=1, col=1
         )
 
@@ -145,14 +145,15 @@ try:
         day_data = df_hourly[day_mask]
         
         if not day_data.empty:
-            for func, offset in [(day_data.loc[day_data['speed'].idxmax()], 2.5), 
-                                 (day_data.loc[day_data['speed'].idxmin()], -2.5)]:
+            for func, offset in [(day_data.loc[day_data['speed'].idxmax()], 3.5), 
+                                 (day_data.loc[day_data['speed'].idxmin()], -3.5)]:
                 heading = (func['dir'] + 180) % 360
-                # Individual Arrow
+                
+                # Small White Arrow with larger gap
                 fig_main.add_annotation(
-                    x=func['time'], y=func['speed'] + (offset/2), 
+                    x=func['time'], y=func['speed'] + (offset/2.2), 
                     text="➤", textangle=heading-90, showarrow=False,
-                    font=dict(size=14, color=get_color(func['speed'])), row=1, col=1
+                    font=dict(size=11, color="white"), row=1, col=1
                 )
                 # Wind Speed Number
                 fig_main.add_annotation(
@@ -170,7 +171,7 @@ try:
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
 
     fig_main.update_layout(
-        height=280, margin=dict(l=10, r=10, t=30, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=280, margin=dict(l=10, r=10, t=50, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, fixedrange=True),
         xaxis2=dict(showgrid=False, tickformat="%a", dtick=86400000.0, tickfont=dict(size=10, color="rgba(255,255,255,0.2)"), fixedrange=True),
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True),
