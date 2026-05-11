@@ -134,17 +134,16 @@ if data and 'hourly' in data:
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.12, 0.88])
     
     # ROW 1: 4-Hourly Heatstrip with Night-Aware Colouring
-    # origin='start_day' ensures we align with midnight
     df_4h = df.resample('4h', on='time', origin='start_day').agg({
         'wind': 'mean', 
         'dir': 'mean',
-        'is_night': lambda x: x.mode()[0] # Determine if majority of block is night
+        'is_night': lambda x: x.mode()[0] 
     }).reset_index()
     
     for _, row in df_4h.iterrows():
-        # If night, use a dark grey-blue matching the shading, else use wind color
         block_color = "#2c3e50" if row['is_night'] else get_color(row['wind'])
-        arrow_color = "rgba(255,255,255,0.4)" if row['is_night'] else "white"
+        # Further dimmed nighttime arrows
+        arrow_color = "rgba(255,255,255,0.15)" if row['is_night'] else "white"
 
         fig_bot.add_trace(go.Bar(
             x=[row['time'] + timedelta(hours=2)], y=[1], width=1000*3600*4,
@@ -157,7 +156,7 @@ if data and 'hourly' in data:
             showarrow=False, font=dict(size=14, color=arrow_color), row=1, col=1
         )
 
-    # ROW 2: Wind Speed Line (Colored Segments)
+    # ROW 2: Wind Speed Line
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         opacity = 0.2 if (p1['is_night'] and p2['is_night']) else 1.0
@@ -167,11 +166,11 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Night Shading (Line Graph)
+    # Night Shading
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.4, line_width=0, row="all")
     
-    # PEAK & VALLEY ANNOTATIONS (Daylight Only)
+    # PEAK & VALLEY (Daylight Only)
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
@@ -182,7 +181,6 @@ if data and 'hourly' in data:
             fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
                                    showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
 
-    # X-Axis Day Labels
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
     tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
 
