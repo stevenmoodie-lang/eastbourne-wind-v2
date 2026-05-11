@@ -132,20 +132,22 @@ try:
                 mode='lines', showlegend=False, hoverinfo='skip'
             ), row=1, col=1)
 
-    # TIDE PLOT (Segmented for heavy night dimming)
+    # TIDE PLOT (ULTRA DIMMED at night)
     for i in range(len(df_tide)-1):
         t1, t2 = df_tide.iloc[i], df_tide.iloc[i+1]
         day_info = df_sun[df_sun['date'] == t1['time'].date()].iloc[0]
         sr, ss = day_info['sunrise'], day_info['sunset']
         is_night = t1['time'] < sr or t1['time'] >= ss
-        opacity = 0.1 if is_night else 1.0
+        line_opacity = 0.05 if is_night else 1.0
+        fill_opacity = 0.002 if is_night else 0.03
+
         fig_main.add_trace(go.Scatter(
             x=[t1['time'], t2['time']], 
             y=[t1['height'], t2['height']],
             mode='lines',
-            line=dict(color=f"rgba(255, 255, 255, {opacity})", width=1),
+            line=dict(color=f"rgba(255, 255, 255, {line_opacity})", width=1),
             fill='tozeroy',
-            fillcolor=f"rgba(255, 255, 255, {0.03 if not is_night else 0.005})",
+            fillcolor=f"rgba(255, 255, 255, {fill_opacity})",
             showlegend=False, hoverinfo='skip'
         ), row=2, col=1)
 
@@ -161,7 +163,7 @@ try:
                 fig_main.add_annotation(x=func['time'], y=func['speed'] + (offset/2.5), text="➤", textangle=heading-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
                 fig_main.add_annotation(x=func['time'], y=func['speed'] + offset, text=f"<b>{round(func['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    # Dimmed Tide Time Labels
+    # ULTRA DIMMED Tide Time Labels
     for i in range(1, len(df_tide)-1):
         prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
@@ -169,7 +171,7 @@ try:
             if crop_start <= t['time'] <= crop_end:
                 day_info = df_sun[df_sun['date'] == t['time'].date()].iloc[0]
                 is_night = t['time'] < day_info['sunrise'] or t['time'] >= day_info['sunset']
-                label_color = "rgba(255, 255, 255, 0.2)" if is_night else "white"
+                label_color = "rgba(255, 255, 255, 0.1)" if is_night else "white"
                 
                 fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, 
                                        font=dict(size=7, color=label_color), yshift=6 if curr > prev else -6, row=2, col=1)
