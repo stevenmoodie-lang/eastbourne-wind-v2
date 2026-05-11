@@ -30,7 +30,7 @@ def get_niwa_wind(location):
 # --- UI SIDEBAR ---
 st.sidebar.header("📍 Location Settings")
 # Defaulting to Wellington as it's a prime wind testing ground
-loc_input = st.sidebar.text_input("Enter NIWA Location ID", value="wellington")
+loc_input = st.sidebar.text_input("Enter NIWA Location ID", value="113776245")
 unit_type = st.sidebar.selectbox("Wind Unit", ["km/h", "knots"])
 
 st.sidebar.markdown("---")
