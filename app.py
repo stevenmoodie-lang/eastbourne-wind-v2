@@ -110,15 +110,15 @@ if data and 'hourly' in data:
     fig_top.update_layout(height=80, margin=dict(t=20, b=0, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0.05, xaxis=dict(showticklabels=False, showgrid=False, showline=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False, showline=False))
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
-    # --- MAIN GRAPHS (Proportions Adjusted) ---
+    # --- MAIN GRAPHS ---
     fig_bot = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=False, 
-        vertical_spacing=0.07, # Added buffer for day labels
-        row_heights=[0.1, 0.30, 0.20] # Wind 30%, Tide 20%
+        vertical_spacing=0.0, # Zero spacing between Wind and Heatstrip
+        row_heights=[0.05, 0.30, 0.20] 
     )
     
-    # 1. Direction Row
+    # 1. Direction Row (No gap below this)
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
         for s in range(3):
@@ -158,7 +158,7 @@ if data and 'hourly' in data:
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#1a2a3a", opacity=0.4, line_width=0, row="all")
 
-    # Day labels
+    # Day labels (Acting as spacer)
     tick_vals = [sun_data.iloc[i]['sunrise'] + (sun_data.iloc[i]['sunset'] - sun_data.iloc[i]['sunrise']) / 2 for i in range(len(sun_data))]
     tick_text = [f"<b>{pd.to_datetime(sun_data.iloc[i]['date']).strftime('%a')}</b>" for i in range(len(sun_data))]
 
@@ -166,10 +166,11 @@ if data and 'hourly' in data:
         height=400, margin=dict(t=0, b=0, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis1=dict(showticklabels=False, matches='x2', showline=False, zeroline=False),
         xaxis2=dict(showticklabels=True, tickmode='array', tickvals=tick_vals, ticktext=tick_text, tickfont=dict(size=10, color="#d1d9e0"), showgrid=False, anchor='y2', showline=False, zeroline=False),
+        # Space between Wind and Tide row
         xaxis3=dict(showticklabels=False, matches='x2', showline=False, zeroline=False),
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False, showline=False, zeroline=False),
         yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.03)", range=[0, df['wind'].max() * 1.3], showline=False, zeroline=False),
-        yaxis3=dict(showticklabels=False, showgrid=False, range=[0, 1.8], showline=False, zeroline=False)
+        yaxis3=dict(showticklabels=False, showgrid=False, range=[0, 2.8], showline=False, zeroline=False) # Increased range for spacing
     )
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
 else:
