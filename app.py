@@ -17,14 +17,28 @@ st.markdown("""
 # --- DATA FETCHING ---
 @st.cache_data(ttl=1800)
 def get_niwa_wind(location):
-    # Base URL for NIWA's Azure-hosted API
-    url = f"https://weather-api-azure.niwa.co.nz/api/location/{location}/combined"
+    # Ensure no extra spaces are messing up the URL
+    clean_loc = str(location).strip()
+    
+    # Try the 'combined' endpoint first
+    url = f"https://weather-api-azure.niwa.co.nz/api/location/{clean_loc}/combined"
+    
     try:
         response = requests.get(url, timeout=10)
+        
+        # If 'combined' doesn't exist for this station, try 'forecast'
+        if response.status_code == 404:
+            st.info(f"'{clean_loc}' not found in 'combined'. Trying 'forecast'...")
+            url = f"https://weather-api-azure.niwa.co.nz/api/location/{clean_loc}/forecast"
+            response = requests.get(url, timeout=10)
+            
         response.raise_for_status()
         return response.json()
+    except requests.exceptions.HTTPError as e:
+        st.error(f"NIWA API says: {e}")
+        return None
     except Exception as e:
-        st.error(f"Error connecting to NIWA: {e}")
+        st.error(f"Connection Error: {e}")
         return None
 
 # --- UI SIDEBAR ---
