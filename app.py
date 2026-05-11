@@ -14,6 +14,14 @@ STATIONS = {
     "Wellington Airport": {"lat": -41.327, "lon": 174.805}
 }
 
+def get_color(knots):
+    if knots < 5: return "lightblue"
+    if knots <= 10: return "blue"
+    if knots <= 15: return "green"
+    if knots <= 19: return "yellow"
+    if knots <= 28: return "red"
+    return "darkred"
+
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
@@ -21,7 +29,7 @@ def get_weather_data(lat, lon):
         "hourly": "wind_speed_10m,wind_gusts_10m",
         "daily": "sunrise,sunset",
         "timezone": "Pacific/Auckland",
-        "wind_speed_unit": "kmh",
+        "wind_speed_unit": "knots", # Fetching knots directly for easier color mapping
         "forecast_days": 3
     }
     try:
@@ -34,7 +42,6 @@ def get_weather_data(lat, lon):
 st.sidebar.title("⚙️ Settings")
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
 hide_night = st.sidebar.toggle("Hide Nighttime Hours", value=False)
-unit = st.sidebar.radio("Units", ["km/h", "knots"])
 
 # --- DATA PROCESSING ---
 coords = STATIONS[selection]
@@ -43,14 +50,10 @@ nz_tz = pytz.timezone('Pacific/Auckland')
 now_nz = datetime.now(nz_tz).replace(tzinfo=None)
 
 if data and 'hourly' in data:
-    # Force 'time' into a Series for robust .dt access
     df = pd.DataFrame({
         'time': pd.Series(pd.to_datetime(data['hourly']['time'])),
         'wind': data['hourly']['wind_speed_10m']
     })
-
-    if unit == "knots":
-        df['wind'] *= 0.539957
 
     daily = data['daily']
     sun_data = pd.DataFrame({
@@ -71,14 +74,34 @@ if data and 'hourly' in data:
     # --- PLOTTING ---
     fig = go.Figure()
 
-    # 1. Add Wind Line
+    # 1. Color-coded Wind Segments
+    # We loop through the data and draw a line from each point to the next
+    for i in range(len(plot_df) - 1):
+        p1 = plot_df.iloc[i]
+        p2 = plot_df.iloc[i+1]
+        
+        # Determine color based on p1 speed
+        color = get_color(p1['wind'])
+        
+        fig.add_trace(go.Scatter(
+            x=[p1['time'], p2['time']],
+            y=[p1['wind'], p2['wind']],
+            mode='lines',
+            line=dict(color=color, width=4),
+            showlegend=False,
+            hoverinfo='none'
+        ))
+
+    # Add a marker trace for hover data and legend appearance
     fig.add_trace(go.Scatter(
-        x=plot_df['time'], y=plot_df['wind'], name=f'Wind ({unit})',
-        line=dict(color='#007BFF', width=3),
-        mode='lines+markers' if hide_night else 'lines'
+        x=plot_df['time'], y=plot_df['wind'],
+        mode='markers',
+        marker=dict(color='gray', opacity=0),
+        name="Wind Speed (Knots)",
+        showlegend=True
     ))
 
-    # 2. Add Night Shading (Only if night is visible)
+    # 2. Add Night Shading
     if not hide_night:
         for i in range(len(sun_data)):
             if i < len(sun_data) - 1:
@@ -113,7 +136,7 @@ if data and 'hourly' in data:
             nticks=15,
             title=""
         ),
-        yaxis=dict(title=unit, rangemode="tozero"),
+        yaxis=dict(title="Knots", rangemode="tozero"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(t=80, b=40)
     )
@@ -123,7 +146,7 @@ if data and 'hourly' in data:
 
     # Summary Metrics
     current_val = plot_df.loc[idx_now, 'wind']
-    st.metric("Forecasted Wind Now", f"{current_val:.1f} {unit}")
+    st.metric("Forecasted Wind Now", f"{current_val:.1f} Knots")
 
 else:
     st.error("Could not load weather data.")
