@@ -72,11 +72,9 @@ try:
     df_hourly, df_sun, df_tide = get_weather_data()
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
     max_wind = df_hourly['speed'].max()
-    
-    crop_start = df_sun['sunrise'].min()
-    crop_end = df_sun['sunset'].max()
+    crop_start, crop_end = df_sun['sunrise'].min(), df_sun['sunset'].max()
 
-    # --- 1. DYNAMIC ARROW RIBBON (Continuous Strip) ---
+    # --- 1. DYNAMIC ARROW RIBBON (With Transparent Gaps) ---
     segments = []
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -88,14 +86,20 @@ try:
             if not d.empty:
                 rads = np.deg2rad(d['dir'])
                 avg_dir = np.rad2deg(np.arctan2(np.sin(rads).mean(), np.cos(rads).mean())) % 360
-                segments.append({"x_id": f"{day['date']}_{i}", "speed": d['speed'].mean(), "dir": avg_dir, "date": day['date']})
+                segments.append({"x_id": f"{day['date']}_{i}", "speed": d['speed'].mean(), "dir": avg_dir})
+        # Adding a transparent spacer segment back in
+        segments.append({"x_id": f"{day['date']}_spacer", "spacer": True})
 
     fig_ribbon = go.Figure()
     for s in segments:
+        if "spacer" in s:
+            # Fully transparent spacer for the gap
+            fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker=dict(color="rgba(0,0,0,0)", line_width=0), showlegend=False))
+            continue
+            
         fig_ribbon.add_trace(go.Bar(
-            x=[s['x_id']], 
-            y=[1], 
-            marker=dict(color=get_color(s['speed']), line_width=0), # Removed outline
+            x=[s['x_id']], y=[1], 
+            marker=dict(color=get_color(s['speed']), line_width=0), # Force 0 line width to remove outlines
             showlegend=False
         ))
         heading = (s['dir'] + 180) % 360
@@ -105,7 +109,7 @@ try:
 
     fig_ribbon.update_layout(
         height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-        bargap=0, # Gap removed
+        bargap=0, # Bars sit flush against each other unless separated by the transparent spacer
         xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], 
                    ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], side="top", 
                    tickfont=dict(size=9, color="white"), fixedrange=True),
@@ -116,7 +120,6 @@ try:
     # --- 2. COMPACT WIND & TIDE DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
-    # (Plotting logic for main graph remains the same to keep the requested look)
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
