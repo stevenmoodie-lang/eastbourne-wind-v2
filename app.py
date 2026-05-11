@@ -160,18 +160,20 @@ if data and 'hourly' in data:
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.4, line_width=0, row="all")
     
-    # PEAK & VALLEY ANNOTATIONS
+    # PEAK & VALLEY ANNOTATIONS (Daylight Only)
     for d_date in df['date_only'].unique():
-        day_block = df[df['date_only'] == d_date]
+        # Specifically filter for daylight hours to find local peaks/valleys
+        day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
+        
         if not day_block.empty:
-            # Peak
+            # Peak within daylight
             peak = day_block.loc[day_block['wind'].idxmax()]
             fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
                                    showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
-            # Valley
+            # Valley within daylight
             valley = day_block.loc[day_block['wind'].idxmin()]
             fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
-                                   showarrow=False, yshift=-15, font=dict(size=10, color="#bdc3c7"), row=2, col=1)
+                                   showarrow=False, yshift=-15, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
 
     # X-Axis Day Labels
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
