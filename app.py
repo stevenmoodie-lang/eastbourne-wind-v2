@@ -25,7 +25,7 @@ STATIONS = {
 
 def get_color(knots):
     if knots < 5: return "lightblue"
-    if knots <= 10: return "blue"
+    if knots <= 10: return "skyblue"  # Changed from 'blue' to 'skyblue'
     if knots <= 15: return "green"
     if knots <= 19: return "yellow"
     if knots <= 28: return "red"
@@ -132,14 +132,8 @@ if data and 'hourly' in data:
             sunrise_next = sun_data['sunrise'].iloc[i+1]
             mid_night = sunset + (sunrise_next - sunset) / 2
             
-            # Shading on line graph (Row 2)
             fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1)
-            
-            # Moon in heatstrip (Row 1)
-            fig_bot.add_annotation(
-                x=mid_night, y=0.5, yref="y1",
-                text="🌙", showarrow=False, font=dict(size=10)
-            )
+            fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
     # Current time indicator
     idx_now = (df['time'] - now_nz).abs().idxmin()
@@ -148,6 +142,7 @@ if data and 'hourly' in data:
     fig_bot.update_layout(
         height=280, margin=dict(t=15, b=0, l=5, r=5), 
         template="plotly_white", hovermode="x unified",
+        xaxis2=dict(showticklabels=False), # Removed day/hour text from bottom axis
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.45], showgrid=False),
         yaxis2=dict(title=None, showticklabels=False, fixedrange=True, showgrid=True), 
         bargap=0
