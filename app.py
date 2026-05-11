@@ -71,6 +71,10 @@ try:
     df_hourly, df_sun, df_tide = get_weather_data()
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
     max_wind = df_hourly['speed'].max()
+    
+    # --- CROP LOGIC: Start at first sunrise, end at last sunset ---
+    crop_start = df_sun['sunrise'].min()
+    crop_end = df_sun['sunset'].max()
 
     # --- 1. DYNAMIC ARROW RIBBON ---
     segments = []
@@ -93,22 +97,10 @@ try:
             fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color="rgba(0,0,0,0)", showlegend=False))
             continue
         fig_ribbon.add_trace(go.Bar(x=[s['x_id']], y=[1], marker_color=get_color(s['speed']), showlegend=False))
-        
-        # Calculate arrow rotation
         heading = (s['dir'] + 180) % 360
-        
-        # FIXED: Arrow Y-position mapped to direction (North=Top, South=Bottom)
-        # Cosine of direction gives 1 for North (0) and -1 for South (180). 
-        # Map that range to 0.25 -> 0.75 for safe padding.
         y_arrow = 0.5 + (0.35 * np.cos(np.deg2rad(s['dir'])))
-
-        # Arrow placement
-        fig_ribbon.add_annotation(x=s['x_id'], y=y_arrow, text="➤", showarrow=False, 
-                                  textangle=heading-90, font=dict(size=7, color="white"))
-        
-        # FIXED: Speed text sitting BELOW the heatstrip (in the negative range)
-        fig_ribbon.add_annotation(x=s['x_id'], y=-0.3, text=f"<b>{round(s['speed'])}</b>", 
-                                  showarrow=False, font=dict(size=7, color="white"))
+        fig_ribbon.add_annotation(x=s['x_id'], y=y_arrow, text="➤", showarrow=False, textangle=heading-90, font=dict(size=7, color="white"))
+        fig_ribbon.add_annotation(x=s['x_id'], y=-0.3, text=f"<b>{round(s['speed'])}</b>", showarrow=False, font=dict(size=7, color="white"))
 
     fig_ribbon.update_layout(
         height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0,
@@ -130,6 +122,7 @@ try:
         current_times = [p1['time']] + transition_points + [p2['time']]
         for j in range(len(current_times)-1):
             t_start, t_end = current_times[j], current_times[j+1]
+            if t_end < crop_start or t_start > crop_end: continue
             frac = (t_start - p1['time']) / (p2['time'] - p1['time']) if p2['time'] != p1['time'] else 0
             interp_speed = p1['speed'] + frac * (p2['speed'] - p1['speed'])
             is_night = t_start < sr or t_start >= ss
@@ -157,7 +150,8 @@ try:
         prev, curr, nxt = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (curr > prev and curr > nxt) or (curr < prev and curr < nxt):
             t = df_tide.iloc[i]
-            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color="#00d4ff"), yshift=6 if curr > prev else -6, row=2, col=1)
+            if crop_start <= t['time'] <= crop_end:
+                fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color="#00d4ff"), yshift=6 if curr > prev else -6, row=2, col=1)
 
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
@@ -165,7 +159,9 @@ try:
 
     fig_main.update_layout(
         height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False, fixedrange=False), xaxis2=dict(visible=False, fixedrange=False),
+        # Set exact X range to sunrise/sunset crop
+        xaxis=dict(visible=False, fixedrange=False, range=[crop_start, crop_end]), 
+        xaxis2=dict(visible=False, fixedrange=False, range=[crop_start, crop_end]),
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 10]),
         yaxis2=dict(showgrid=False, zeroline=False, fixedrange=True, showticklabels=False, range=[0, 2.2])
     )
