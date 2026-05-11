@@ -9,13 +9,22 @@ import pytz
 # --- PAGE CONFIG & CSS ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
+# Custom CSS for Dark Grey-Blue Theme
 st.markdown("""
     <style>
+        .stApp {
+            background-color: #1e2a3a;
+            color: #e0e6ed;
+        }
         .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
-        h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; white-space: nowrap; overflow: visible; }
-        .subtitle { font-size: 0.9rem; color: #666; margin-bottom: 10px; }
-        .stButton button { margin-top: 8px; padding: 2px 10px; }
+        h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; color: #ffffff !important; }
+        .subtitle { font-size: 0.9rem; color: #aab8c2; margin-bottom: 10px; }
+        .stButton button { margin-top: 8px; padding: 2px 10px; background-color: #2c3e50; color: white; border: none; }
         .stPlotlyChart { margin-bottom: 5px !important; } 
+        /* Sidebar styling */
+        section[data-testid="stSidebar"] {
+            background-color: #151d27;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -82,6 +91,17 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
+    # --- HEADER ---
+    idx_now = (df['time'] - now_nz).abs().idxmin()
+    col1, col2 = st.columns([6, 1]) 
+    with col1:
+        st.markdown(f"<h1>Eastbourne Wind: {round(df.loc[idx_now, 'wind'])} kn</h1>", unsafe_allow_html=True)
+        st.markdown(f"<div class='subtitle'>Monitoring at <b>{selection}</b> — Currently <b>{get_direction_label(df.loc[idx_now, 'dir'])}</b></div>", unsafe_allow_html=True)
+    with col2:
+        if st.button("🔄 Refresh"):
+            st.cache_data.clear()
+            st.rerun()
+
     # --- 1. TOP SUMMARY ---
     day_df = df[~df['is_night']].copy()
     daily_summary = day_df.groupby('date_only').agg({'wind': 'mean', 'dir': lambda x: x.mode()[0]}).reset_index()
@@ -95,38 +115,33 @@ if data and 'hourly' in data:
 
     for i, row in daily_summary.iterrows():
         date_label = pd.to_datetime(row['date_only']).strftime('%a')
-        fig_top.add_annotation(x=str(row['date_only']), y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11))
+        fig_top.add_annotation(x=str(row['date_only']), y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11, color="white"))
         fig_top.add_annotation(x=str(row['date_only']), y=0.5, text=f"<b>{round(row['wind'])} kn</b>", showarrow=False, font=dict(size=13, color="white"))
 
-    fig_top.update_layout(height=110, margin=dict(t=35, b=0, l=5, r=5), template="plotly_white", bargap=0.05, xaxis=dict(showticklabels=False), yaxis=dict(showticklabels=False, range=[0, 1.4]))
+    fig_top.update_layout(
+        height=110, margin=dict(t=35, b=0, l=5, r=5), 
+        template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        bargap=0.05, xaxis=dict(showticklabels=False), yaxis=dict(showticklabels=False, range=[0, 1.4])
+    )
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
 
     # --- 2. BOTTOM GRAPH ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.12, 0.88])
     
     # ROW 1: 4-Hourly Heatstrip with Arrows
-    # origin='start_day' ensures we align with midnight
     df_4h = df.resample('4h', on='time', origin='start_day').agg({'wind': 'mean', 'dir': 'mean'}).reset_index()
-    
     for _, row in df_4h.iterrows():
-        # Draw 4-hour colored bar
         fig_bot.add_trace(go.Bar(
-            x=[row['time'] + timedelta(hours=2)], 
-            y=[1], 
-            width=1000*3600*4, # 4 hours in ms
-            marker_color=get_color(row['wind']),
-            showlegend=False, hoverinfo='none'
+            x=[row['time'] + timedelta(hours=2)], y=[1], width=1000*3600*4,
+            marker_color=get_color(row['wind']), showlegend=False, hoverinfo='none'
         ), row=1, col=1)
-        
-        # Add arrow inside the bar
         fig_bot.add_annotation(
             x=row['time'] + timedelta(hours=2), y=0.5, yref="y1",
             text="➤", textangle=row['dir']-90,
-            showarrow=False, font=dict(size=14, color="white"),
-            row=1, col=1
+            showarrow=False, font=dict(size=14, color="white"), row=1, col=1
         )
 
-    # ROW 2: Wind Speed Line (Colored Segments)
+    # ROW 2: Wind Speed Line
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         opacity = 0.15 if (p1['is_night'] and p2['is_night']) else 1.0
@@ -136,25 +151,25 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Night Shading & Peak markers
+    # Shading & Peaks
     for i in range(len(sun_data)-1):
-        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="black", opacity=0.08, line_width=0, row="all")
+        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="black", opacity=0.3, line_width=0, row="all")
     
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
-            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10), row=2, col=1)
+            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
 
-    # X-Axis Day Labels centered at 12:00 PM
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
     tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
 
     fig_bot.update_layout(
-        height=380, margin=dict(t=10, b=0, l=5, r=5), template="plotly_white",
+        height=380, margin=dict(t=10, b=0, l=5, r=5), 
+        template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False),
-        yaxis2=dict(title=None, side="left", showgrid=True, tickfont=dict(size=9)),
-        xaxis2=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(200,200,200,0.2)", tickfont=dict(size=11, color="black", family="Arial Black"))
+        yaxis2=dict(title=None, side="left", showgrid=True, gridcolor="rgba(255,255,255,0.05)", tickfont=dict(size=9, color="#aab8c2")),
+        xaxis2=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(255,255,255,0.05)", tickfont=dict(size=11, color="white", family="Arial Black"))
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
