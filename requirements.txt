@@ -3,3 +3,6 @@ requests
 pandas
 plotly
 pytz
+requests
+beautifulsoup4
+pandas
