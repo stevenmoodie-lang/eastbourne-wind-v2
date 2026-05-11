@@ -24,7 +24,7 @@ STATIONS = {
 }
 
 def get_color(knots, opacity=1.0):
-    # Convert named colors to RGBA to allow dimming
+    # Convert named colors to RGBA for ultra-dimming
     colors = {
         "lightblue": f"rgba(173, 216, 230, {opacity})",
         "dodgerblue": f"rgba(30, 144, 255, {opacity})",
@@ -119,12 +119,14 @@ if data and 'hourly' in data:
                                 marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
-    # Line graph row with dimmed night lines
+    # Line graph row with ultra-dimmed night lines
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         is_segment_night = p1['is_night'] and p2['is_night']
-        line_opacity = 0.25 if is_segment_night else 1.0
-        line_width = 1.5 if is_segment_night else 2.5
+        
+        # Lowered opacity to 0.1 and width to 1 for a "ghost" effect
+        line_opacity = 0.1 if is_segment_night else 1.0
+        line_width = 1.0 if is_segment_night else 2.5
         
         fig_bot.add_trace(go.Scatter(
             x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], 
@@ -145,7 +147,8 @@ if data and 'hourly' in data:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
             mid_night = sunset + (sunrise_next - sunset) / 2
-            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.08, line_width=0, row=2, col=1)
+            # Lightened the shading overlay to 0.05
+            fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.05, line_width=0, row=2, col=1)
             fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
     idx_now = (df['time'] - now_nz).abs().idxmin()
