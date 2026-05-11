@@ -6,14 +6,12 @@ from plotly.subplots import make_subplots
 from datetime import datetime, time
 import pytz
 
-# --- PAGE CONFIG & CSS ---
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="Wind", layout="wide")
 
-# This CSS strips the massive default padding at the top of Streamlit apps
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-bottom: 0rem; }
-        .stMetric { margin-top: -50px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -39,10 +37,8 @@ def get_weather_data(lat, lon, days):
         "daily": "sunrise,sunset",
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kmh", "forecast_days": days
     }
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        return r.json() if r.status_code == 200 else None
-    except: return None
+    r = requests.get(url, params=params, timeout=10)
+    return r.json() if r.status_code == 200 else None
 
 # --- SIDEBAR ---
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
@@ -67,41 +63,52 @@ if data and 'hourly' in data:
         'sunset': pd.to_datetime(data['daily']['sunset'])
     })
     df = df.merge(sun_data, left_on='date_only', right_on='date')
+    
+    # Identify Night
+    df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- PLOT (HEIGHT: 300px) ---
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.2, 0.8])
-
+    # --- GRAPH 1: FULL TIMELINE (HEIGHT: 300px) ---
+    fig1 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.2, 0.8])
     for i in range(len(df)):
-        is_night = (df.loc[i, 'time'] < df.loc[i, 'sunrise']) or (df.loc[i, 'time'] > df.loc[i, 'sunset'])
-        fig.add_trace(go.Bar(x=[df.loc[i, 'time']], y=[1], marker_color="rgb(240,240,240)" if is_night else get_color(df.loc[i, 'wind']), marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
+        fig1.add_trace(go.Bar(x=[df['time'][i]], y=[1], marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
+    
+    for i in range(len(df)-1):
+        fig1.add_trace(go.Scatter(x=[df['time'][i], df['time'][i+1]], y=[df['wind'][i], df['wind'][i+1]], mode='lines', line=dict(color=get_color(df['wind'][i]), width=2), showlegend=False, hoverinfo='none'), row=2, col=1)
 
-    for i in range(len(df) - 1):
-        fig.add_trace(go.Scatter(x=[df['time'][i], df['time'][i+1]], y=[df['wind'][i], df['wind'][i+1]], mode='lines', line=dict(color=get_color(df['wind'][i]), width=2), showlegend=False, hoverinfo='none'), row=2, col=1)
-
-    # Annotations
-    for i in range(len(sun_data)):
-        midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
-        fig.add_annotation(x=midday, y=1.5, yref="y1", text=f"<b>{midday.strftime('%a')}</b>", showarrow=False, font=dict(size=9))
-        if i < len(sun_data) - 1:
-            sunset, sunrise_next = sun_data['sunset'].iloc[i], sun_data['sunrise'].iloc[i+1]
-            fig.add_annotation(x=sunset + (sunrise_next - sunset)/2, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
-            fig.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.05, line_width=0, row=2, col=1)
-
-    # NOW line
     idx_now = (df['time'] - now_nz).abs().idxmin()
-    fig.add_vline(x=df.loc[idx_now, 'time'], line_width=1.5, line_dash="dot", line_color="green")
+    fig1.add_vline(x=df.loc[idx_now, 'time'], line_width=1.5, line_dash="dot", line_color="green")
+    fig1.update_layout(height=280, margin=dict(t=20, b=0, l=5, r=5), template="plotly_white", hovermode="x unified",
+                      yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.6]),
+                      yaxis2=dict(title="kn", fixedrange=True), bargap=0)
 
-    fig.update_layout(
-        height=300, margin=dict(t=20, b=0, l=5, r=5),
-        template="plotly_white", hovermode="x unified",
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 2], showgrid=False),
-        yaxis2=dict(title="kn", title_font=dict(size=10), tickfont=dict(size=9), fixedrange=True),
-        bargap=0
+    # --- GRAPH 2: DAYLIGHT ONLY HEATSTRIP (HEIGHT: 100px) ---
+    day_df = df[~df['is_night']].copy()
+    day_df['time_str'] = day_df['time'].dt.strftime('%a %H:00') # Convert to string for category axis
+
+    fig2 = go.Figure()
+    fig2.add_trace(go.Bar(
+        x=day_df['time_str'],
+        y=[1] * len(day_df),
+        marker_color=[get_color(w) for w in day_df['wind']],
+        marker_line_width=0,
+        showlegend=False,
+        customdata=day_df['wind'],
+        hovertemplate='%{x}<br>%{customdata:.1f} kn<extra></extra>'
+    ))
+
+    fig2.update_layout(
+        height=120, margin=dict(t=30, b=20, l=5, r=5),
+        template="plotly_white",
+        bargap=0,
+        xaxis=dict(type='category', tickangle=45, tickfont=dict(size=8), dtick=4 if days_to_fetch==7 else 2),
+        yaxis=dict(showticklabels=False, fixedrange=True, showgrid=False, zeroline=False),
+        title=dict(text="Daylight Windows Only", font=dict(size=12), x=0.01)
     )
 
-    # Display metric and title in one tight block
+    # Display
     st.write(f"### {selection} **{df.loc[idx_now, 'wind']:.1f} kn**")
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig1, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig2, use_container_width=True, config={'displayModeBar': False})
 
 else:
     st.error("Error loading data")
