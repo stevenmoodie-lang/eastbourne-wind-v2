@@ -25,7 +25,7 @@ STATIONS = {
 
 def get_color(knots):
     if knots < 5: return "lightblue"
-    if knots <= 10: return "skyblue"  # Changed from 'blue' to 'skyblue'
+    if knots <= 10: return "royalblue"  # Darker than skyblue, punchier than basic blue
     if knots <= 15: return "green"
     if knots <= 19: return "yellow"
     if knots <= 28: return "red"
@@ -103,30 +103,24 @@ if data and 'hourly' in data:
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
-    # Heatstrip row
     for i in range(len(df)):
         fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
                                 marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
                                 marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
-    # Line graph row
     for i in range(len(df)-1):
         fig_bot.add_trace(go.Scatter(x=[df['time'][i], df['time'][i+1]], y=[df['wind'][i], df['wind'][i+1]], 
                                      mode='lines', line=dict(color=get_color(df['wind'][i]), width=2.5), 
                                      showlegend=False, hoverinfo='none'), row=2, col=1)
 
-    # Day Annotations, Night Shading, and Moons
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
-        
-        # Day Text
         fig_bot.add_annotation(
             x=midday, y=1.02, yref="y1", 
             text=f"<b>{midday.strftime('%a %d')}</b>",
             showarrow=False, font=dict(size=9), yanchor="bottom"
         )
         
-        # Night Shading & Moons
         if i < len(sun_data) - 1:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
@@ -135,15 +129,14 @@ if data and 'hourly' in data:
             fig_bot.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1)
             fig_bot.add_annotation(x=mid_night, y=0.5, yref="y1", text="🌙", showarrow=False, font=dict(size=10))
 
-    # Current time indicator
     idx_now = (df['time'] - now_nz).abs().idxmin()
     fig_bot.add_vline(x=df.loc[idx_now, 'time'], line_width=1.5, line_dash="dot", line_color="green")
     
     fig_bot.update_layout(
         height=280, margin=dict(t=15, b=0, l=5, r=5), 
         template="plotly_white", hovermode="x unified",
-        xaxis2=dict(showticklabels=False), # Removed day/hour text from bottom axis
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.45], showgrid=False),
+        xaxis2=dict(showticklabels=False), 
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False), # Range tightened
         yaxis2=dict(title=None, showticklabels=False, fixedrange=True, showgrid=True), 
         bargap=0
     )
