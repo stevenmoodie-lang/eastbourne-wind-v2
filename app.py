@@ -9,27 +9,26 @@ import pytz
 # --- PAGE CONFIG & CSS ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
-# Custom CSS for "Lighter" Slate Grey-Blue Theme
+# Custom CSS for "Lighter Again" Cloudy Slate Theme
 st.markdown("""
     <style>
         .stApp {
-            background-color: #2c3e50;
-            color: #ecf0f1;
+            background-color: #3d5a73;
+            color: #f8f9fa;
         }
         .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
         h1 { font-size: 1.8rem !important; margin-bottom: 0px !important; color: #ffffff !important; }
-        .subtitle { font-size: 0.9rem; color: #bdc3c7; margin-bottom: 10px; }
+        .subtitle { font-size: 0.9rem; color: #d1d9e0; margin-bottom: 10px; }
         .stButton button { 
             margin-top: 8px; 
             padding: 2px 10px; 
-            background-color: #34495e; 
+            background-color: #4e6a82; 
             color: white; 
             border: 1px solid #7f8c8d; 
         }
         .stPlotlyChart { margin-bottom: 5px !important; } 
-        /* Sidebar styling */
         section[data-testid="stSidebar"] {
-            background-color: #1a252f;
+            background-color: #2c3e50;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -72,7 +71,7 @@ def get_weather_data(lat, lon, days):
     r = requests.get(url, params=params, timeout=10)
     return r.json() if r.status_code == 200 else None
 
-# --- SIDEBAR & DATA ---
+# --- DATA PROCESSING ---
 selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
 forecast_range = st.sidebar.radio("Range", ["7 Days", "3 Days"], index=0)
 days_to_fetch = 7 if forecast_range == "7 Days" else 3
@@ -147,7 +146,7 @@ if data and 'hourly' in data:
             showarrow=False, font=dict(size=14, color="white"), row=1, col=1
         )
 
-    # ROW 2: Wind Speed Line
+    # ROW 2: Wind Speed Line (Colored Segments)
     for i in range(len(df)-1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         opacity = 0.2 if (p1['is_night'] and p2['is_night']) else 1.0
@@ -157,16 +156,24 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Shading & Peaks
+    # Night Shading
     for i in range(len(sun_data)-1):
-        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#1a252f", opacity=0.4, line_width=0, row="all")
+        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.4, line_width=0, row="all")
     
+    # PEAK & VALLEY ANNOTATIONS
     for d_date in df['date_only'].unique():
-        day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
+        day_block = df[df['date_only'] == d_date]
         if not day_block.empty:
+            # Peak
             peak = day_block.loc[day_block['wind'].idxmax()]
-            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
+            fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
+                                   showarrow=False, yshift=15, font=dict(size=10, color="white"), row=2, col=1)
+            # Valley
+            valley = day_block.loc[day_block['wind'].idxmin()]
+            fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
+                                   showarrow=False, yshift=-15, font=dict(size=10, color="#bdc3c7"), row=2, col=1)
 
+    # X-Axis Day Labels
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
     tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
 
@@ -174,8 +181,8 @@ if data and 'hourly' in data:
         height=380, margin=dict(t=10, b=0, l=5, r=5), 
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False),
-        yaxis2=dict(title=None, side="left", showgrid=True, gridcolor="rgba(255,255,255,0.1)", tickfont=dict(size=9, color="#bdc3c7")),
-        xaxis2=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(255,255,255,0.1)", tickfont=dict(size=11, color="white", family="Arial Black"))
+        yaxis2=dict(showticklabels=False, title=None, side="left", showgrid=True, gridcolor="rgba(255,255,255,0.08)"),
+        xaxis2=dict(tickmode='array', tickvals=tick_vals, ticktext=tick_text, showgrid=True, gridcolor="rgba(255,255,255,0.08)", tickfont=dict(size=11, color="white", family="Arial Black"))
     )
 
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
