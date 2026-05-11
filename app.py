@@ -132,16 +132,16 @@ if data and 'hourly' in data:
             avg_knots = round(day_block['wind'].mean())
             midday = datetime.combine(d_date, time(12, 0))
             
-            # Label Max (Mountain)
+            # Label Max
             fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
                                    showarrow=False, yshift=12, font=dict(size=10, color="black"), row=2, col=1)
-            # Label Min (Valley)
+            # Label Min
             if peak['time'] != valley['time']:
                 fig_bot.add_annotation(x=valley['time'], y=valley['wind'], text=f"<b>{round(valley['wind'])}</b>", 
                                        showarrow=False, yshift=-12, font=dict(size=10, color="gray"), row=2, col=1)
             
-            # NEW: Daily Average in the bottom heatstrip
-            fig_bot.add_annotation(x=midday, y=0.5, yref="y1", text=f"<b>{avg_knots}</b>", 
+            # Daily Average with "kn" suffix
+            fig_bot.add_annotation(x=midday, y=0.5, yref="y1", text=f"<b>{avg_knots} kn</b>", 
                                    showarrow=False, font=dict(size=10, color="white"), row=1, col=1)
 
     for i in range(len(sun_data)):
