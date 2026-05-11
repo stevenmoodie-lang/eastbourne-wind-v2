@@ -52,48 +52,28 @@ def get_weather_data():
         "daily": ["sunrise", "sunset"], 
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
-    response = requests.get(url, params=params)
-    if response.status_code != 200: return None, None, None
-    r = response.json()
-    
-    def to_nz_naive(raw):
-        return pd.to_datetime(raw).tz_localize(None)
-
-    df_h = pd.DataFrame({
-        "time": to_nz_naive(r["hourly"]["time"]), 
-        "speed": r["hourly"]["wind_speed_10m"], 
-        "dir": r["hourly"]["wind_direction_10m"]
-    })
-    
-    df_s = pd.DataFrame({
-        "date": pd.to_datetime(r["daily"]["time"]).date, 
-        "sunrise": to_nz_naive(r["daily"]["sunrise"]), 
-        "sunset": to_nz_naive(r["daily"]["sunset"])
-    })
-
+    r = requests.get(url, params=params).json()
+    def to_nz_naive(raw): return pd.to_datetime(raw).tz_localize(None)
+    df_h = pd.DataFrame({"time": to_nz_naive(r["hourly"]["time"]), "speed": r["hourly"]["wind_speed_10m"], "dir": r["hourly"]["wind_direction_10m"]})
+    df_s = pd.DataFrame({"date": pd.to_datetime(r["daily"]["time"]).date, "sunrise": to_nz_naive(r["daily"]["sunrise"]), "sunset": to_nz_naive(r["daily"]["sunset"])})
     t_range = pd.date_range(start=df_h['time'].min(), end=df_h['time'].max(), freq='15min')
     df_tide = pd.DataFrame({"time": t_range, "height": [calculate_wellington_tide(t) for t in t_range]})
     return df_h, df_s, df_tide
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    if df_hourly is None:
-        st.warning("Weather API is busy...")
-        st.stop()
-
     now = datetime.datetime.now().replace(microsecond=0)
     max_wind = df_hourly['speed'].max()
     crop_start, crop_end = df_sun['sunrise'].min(), df_sun['sunset'].max()
 
     def check_daylight(t, sun_df):
-        # Efficiently check if time t falls within any sunrise/sunset pair
         match = sun_df[sun_df['date'] == t.date()]
         if not match.empty:
             s = match.iloc[0]
             return s['sunrise'] <= t <= s['sunset']
         return False
 
-    # --- 1. TOP RIBBON ---
+    # --- 1. RIBBON ---
     fig_ribbon = go.Figure()
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -111,60 +91,44 @@ try:
     fig_ribbon.update_layout(height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0, xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], ticktext=[f"<b>{d.strftime('%a')}</b>" for d in df_sun['date']], side="top", tickfont=dict(size=9, color="white")), yaxis=dict(visible=False, fixedrange=True))
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. MAIN DASHBOARD ---
+    # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
-    # Shading (Layered Bottom)
+    # FORCE NIGHT SHADING
+    night_shapes = []
     for i in range(len(df_sun)-1):
-        fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.35)", layer="below", line_width=0)
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], y0=0, y1=1, fillcolor="rgba(0,0,0,0.45)", layer="below", line_width=0))
 
-    # Wind Lines (Fixed Midpoint Check)
+    # Wind Lines
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
-        midpoint = p1['time'] + (p2['time'] - p1['time']) / 2
-        is_day = check_daylight(midpoint, df_sun)
-        alpha = 1.0 if is_day else 0.12
-        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=1.6), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
+        alpha = 1.0 if check_daylight(p1['time'] + (p2['time']-p1['time'])/2, df_sun) else 0.15
+        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=1.7), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
 
     # Tide Traces
     for is_day_tide in [True, False]:
         t_data_x, t_data_y = [], []
         for _, row in df_tide.iterrows():
-            in_sun = check_daylight(row['time'], df_sun)
-            if in_sun == is_day_tide:
+            if check_daylight(row['time'], df_sun) == is_day_tide:
                 t_data_x.extend([row['time'], None]); t_data_y.extend([row['height'], None])
-        
-        t_color = "white" if is_day_tide else "rgba(255,255,255,0.12)"
-        fig_main.add_trace(go.Scatter(x=t_data_x, y=t_data_y, line=dict(color=t_color, width=0.8), fill='tozeroy' if is_day_tide else None, fillcolor="rgba(255,255,255,0.03)" if is_day_tide else None, mode='lines', showlegend=False), row=2, col=1)
+        fig_main.add_trace(go.Scatter(x=t_data_x, y=t_data_y, line=dict(color="white" if is_day_tide else "rgba(255,255,255,0.15)", width=0.8), fill='tozeroy' if is_day_tide else None, fillcolor="rgba(255,255,255,0.03)", mode='lines', showlegend=False), row=2, col=1)
 
-    # Markers & Sun Labels
     for _, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
-        fig_main.add_vline(x=midday, line_width=0.5, line_dash="dot", line_color="rgba(255,255,255,0.1)")
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{day['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.5)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunrise'], y=-4, text=f"☼{day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7, color="rgba(255,255,255,0.4)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunset'], y=-4, text=f"☾{day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7, color="rgba(255,255,255,0.4)"), row=1, col=1)
         
-        # Labels - slightly offset from the data area
-        fig_main.add_annotation(x=day['sunrise'], y=-3, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7, color="rgba(255,255,255,0.4)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunset'], y=-3, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7, color="rgba(255,255,255,0.4)"), row=1, col=1)
-
         d_day = df_hourly[(df_hourly['time'] >= day['sunrise']) & (df_hourly['time'] <= day['sunset'])]
         if not d_day.empty:
             for idx in [d_day['speed'].idxmax(), d_day['speed'].idxmin()]:
                 f = d_day.loc[idx]
-                off = 3.5 if idx == d_day['speed'].idxmax() else -3.5
-                fig_main.add_annotation(x=f['time'], y=f['speed'] + (off/2.5), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
-                fig_main.add_annotation(x=f['time'], y=f['speed'] + off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
+                off = 4 if idx == d_day['speed'].idxmax() else -4
+                fig_main.add_annotation(x=f['time'], y=f['speed']+(off/2), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
+                fig_main.add_annotation(x=f['time'], y=f['speed']+off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    for i in range(1, len(df_tide)-1):
-        p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
-        if (c > p and c > n) or (c < p and c < n):
-            t = df_tide.iloc[i]
-            alpha = 0.5 if check_daylight(t['time'], df_sun) else 0.05
-            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color=f"rgba(255,255,255,{alpha})"), yshift=7 if c > p else -7, row=2, col=1)
-
-    fig_main.add_vline(x=now, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
-    fig_main.update_layout(height=230, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=False, range=[crop_start, crop_end]), xaxis2=dict(visible=False, range=[crop_start, crop_end]), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, showticklabels=False, range=[-6, max_wind + 10]), yaxis2=dict(visible=False, range=[0, 2.2]))
+    fig_main.update_layout(shapes=night_shapes, height=230, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis=dict(visible=False, range=[crop_start, crop_end]), xaxis2=dict(visible=False, range=[crop_start, crop_end]), yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, showticklabels=False, range=[-8, max_wind + 10]), yaxis2=dict(visible=False, range=[0, 2.2]))
     st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False})
 
 except Exception as e:
-    st.error(f"Sync Error: {e}")
+    st.error(f"Error: {e}")
