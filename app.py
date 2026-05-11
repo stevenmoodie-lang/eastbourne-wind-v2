@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 import pytz
 
 # --- PAGE CONFIG ---
@@ -67,18 +67,16 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- PLOTTING WITH 3 ROWS ---
-    # Row 1: Day Labels (Transparent)
-    # Row 2: Heatstrip
-    # Row 3: Line Graph
+    # --- PLOTTING ---
+    # Back to 2 rows: Heatstrip (Top) and Line (Bottom)
     fig = make_subplots(
-        rows=3, cols=1, 
+        rows=2, cols=1, 
         shared_xaxes=True, 
-        vertical_spacing=0.01,
-        row_heights=[0.1, 0.15, 0.75]
+        vertical_spacing=0.05,
+        row_heights=[0.2, 0.8]
     )
 
-    # 1. ADD HEATSTRIP (ROW 2)
+    # 1. HEATSTRIP (Row 1)
     for i in range(len(df)):
         knots = df.loc[i, 'wind']
         is_night = df.loc[i, 'is_night']
@@ -88,52 +86,51 @@ if data and 'hourly' in data:
             x=[df.loc[i, 'time']], y=[1],
             marker_color=bar_color, marker_line_width=0,
             showlegend=False, hoverinfo='none'
-        ), row=2, col=1)
+        ), row=1, col=1)
 
-    # 2. ADD LINE GRAPH (ROW 3)
+    # 2. LINE GRAPH (Row 2)
     for i in range(len(df) - 1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         fig.add_trace(go.Scatter(
             x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']],
             mode='lines', line=dict(color=get_color(p1['wind']), width=4),
             showlegend=False, hoverinfo='none'
-        ), row=3, col=1)
+        ), row=2, col=1)
 
-    # Invisible hover trace
+    # Hover layer
     fig.add_trace(go.Scatter(
         x=df['time'], y=df['wind'], mode='markers', marker=dict(opacity=0),
         name="Wind", showlegend=False
-    ), row=3, col=1)
+    ), row=2, col=1)
 
-    # 3. NIGHT SHADING & MOON ICONS
+    # 3. ANNOTATIONS (Days and Moons)
     for i in range(len(sun_data)):
-        # Shading for the line graph
-        if i < len(sun_data) - 1:
-            start_night = sun_data['sunset'].iloc[i]
-            end_night = sun_data['sunrise'].iloc[i+1]
-            
-            fig.add_vrect(
-                x0=start_night, x1=end_night,
-                fillcolor="gray", opacity=0.1, line_width=0, row=3, col=1
-            )
-            
-            # Place Moon Icon in the middle of the night period in the Heatstrip row
-            mid_night = start_night + (end_night - start_night) / 2
-            fig.add_annotation(
-                x=mid_night, y=0.5, yref="y2", # y2 corresponds to Row 2
-                text="🌙", showarrow=False, font=dict(size=16)
-            )
-
-    # 4. DAY LABELS (Top Row & Bottom Axis)
-    tickvals = [datetime.combine(d, time(12, 0)) for d in sun_data['date']]
-    ticktext = [t.strftime("%a %d %b") for t in tickvals]
-
-    # Add text labels to Row 1 (Top)
-    for tv, tt in zip(tickvals, ticktext):
+        midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
+        
+        # Day Label at the top of the Heatstrip
         fig.add_annotation(
-            x=tv, y=0.5, yref="y1", # y1 corresponds to Row 1
-            text=f"<b>{tt}</b>", showarrow=False, font=dict(size=14, color="black")
+            x=midday, y=1.2, yref="y1",
+            text=f"<b>{midday.strftime('%a %d %b')}</b>",
+            showarrow=False, font=dict(size=14)
         )
+        
+        # Moon icons between sunsets and sunrises
+        if i < len(sun_data) - 1:
+            sunset = sun_data['sunset'].iloc[i]
+            sunrise_next = sun_data['sunrise'].iloc[i+1]
+            mid_night = sunset + (sunrise_next - sunset) / 2
+            
+            fig.add_annotation(
+                x=mid_night, y=0.5, yref="y1",
+                text="🌙", showarrow=False, font=dict(size=20)
+            )
+
+        # Shading for the main graph
+        if i < len(sun_data) - 1:
+            fig.add_vrect(
+                x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1],
+                fillcolor="gray", opacity=0.1, line_width=0, row=2, col=1
+            )
 
     # NOW line
     idx_now = (df['time'] - now_nz).abs().idxmin()
@@ -141,14 +138,13 @@ if data and 'hourly' in data:
     fig.add_vline(x=closest_time, line_width=2, line_dash="dot", line_color="green")
 
     fig.update_layout(
-        height=600,
+        height=550,
         template="plotly_white",
         hovermode="x unified",
-        xaxis3=dict(tickvals=tickvals, ticktext=ticktext, title=""),
-        yaxis1=dict(showticklabels=False, fixedrange=True, showgrid=False, zeroline=False), # Day Headers
-        yaxis2=dict(showticklabels=False, fixedrange=True, range=[0, 1], showgrid=False), # Heatstrip
-        yaxis3=dict(title="Knots", rangemode="tozero"), # Line Graph
-        margin=dict(t=10, b=40, l=10, r=10),
+        xaxis2=dict(showticklabels=True, title=""),
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.5], showgrid=False),
+        yaxis2=dict(title="Knots", rangemode="tozero"),
+        margin=dict(t=60, b=40, l=10, r=10),
         bargap=0
     )
 
