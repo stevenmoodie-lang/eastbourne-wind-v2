@@ -99,12 +99,12 @@ if data and 'hourly' in data:
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
         fig_top.add_annotation(x=center_idx, y=1.22, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
         
-        # Average text INSIDE the color box
+        # Average text INSIDE the color box with 'kn' suffix
         fig_top.add_annotation(
             x=center_idx, y=0.5, 
-            text=f"<b>{avg_knots}</b>", 
+            text=f"<b>{avg_knots} kn</b>", 
             showarrow=False, 
-            font=dict(size=14, color="white"), # Large white text on the color
+            font=dict(size=13, color="white"), 
             xanchor="center"
         )
         
