@@ -66,8 +66,9 @@ def get_weather_data(lat, lon, days):
 @st.cache_data(ttl=3600)
 def get_tide_data(days):
     start_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    times = pd.date_range(start=start_time, periods=days*24*4, freq='15min')
-    tide_heights = [1.0 + 0.5 * np.sin((t.timestamp() / 22357) * np.pi) for t in times]
+    # Higher frequency for smoother curve and peak detection
+    times = pd.date_range(start=start_time, periods=days*24*12, freq='5min')
+    tide_heights = [1.0 + 0.6 * np.sin((t.timestamp() / 22357) * np.pi) for t in times]
     return pd.DataFrame({'time': times, 'height': tide_heights})
 
 # --- DATA FETCHING ---
@@ -137,11 +138,11 @@ if data and 'hourly' in data:
     fig_bot = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=True, 
-        vertical_spacing=0.08, # Space for the day labels between wind and tide
+        vertical_spacing=0.08, 
         row_heights=[0.1, 0.6, 0.3]
     )
     
-    # Calculate 3-segment Day/Night logic
+    # Detailed Segment Bars (Row 1)
     heat_blocks = []
     for i in range(len(sun_data)):
         day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
@@ -179,7 +180,7 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # Tide Graph (Row 3)
+    # Tide Silhouette (Row 3)
     fig_bot.add_trace(go.Scatter(
         x=tide_df['time'], y=tide_df['height'],
         fill='tozeroy', mode='lines',
@@ -187,6 +188,17 @@ if data and 'hourly' in data:
         fillcolor='rgba(93, 173, 226, 0.15)',
         showlegend=False, hoverinfo='none'
     ), row=3, col=1)
+
+    # TIDE PEAK DETECTION (High/Low)
+    # We find where height is max/min compared to neighbors
+    tide_vals = tide_df['height'].values
+    for i in range(1, len(tide_vals) - 1):
+        if tide_vals[i] > tide_vals[i-1] and tide_vals[i] > tide_vals[i+1]: # High Tide
+            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), 
+                                   showarrow=False, yshift=8, font=dict(size=9, color="#5dade2"), row=3, col=1)
+        if tide_vals[i] < tide_vals[i-1] and tide_vals[i] < tide_vals[i+1]: # Low Tide
+            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=tide_vals[i], text=tide_df.iloc[i]['time'].strftime('%-H:%M'), 
+                                   showarrow=False, yshift=-8, font=dict(size=9, color="#d1d9e0"), row=3, col=1)
 
     # Wind Peak/Valley labels
     for d_date in df['date_only'].unique():
@@ -201,21 +213,21 @@ if data and 'hourly' in data:
     for i in range(len(sun_data)-1):
         fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#2c3e50", opacity=0.35, line_width=0, row="all")
 
-    # Day labels for the middle graph
+    # Time Labels Config (Matching top strip font style)
     tick_vals = [pd.to_datetime(d) + timedelta(hours=12) for d in df['date_only'].unique()]
-    tick_text = [pd.to_datetime(d).strftime('%a') for d in df['date_only'].unique()]
+    tick_text = [f"<b>{pd.to_datetime(d).strftime('%a')}</b>" for d in df['date_only'].unique()]
 
     fig_bot.update_layout(
-        height=600, margin=dict(t=10, b=10, l=5, r=5), 
+        height=620, margin=dict(t=10, b=10, l=5, r=5), 
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False, zeroline=False),
         yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.05)", zeroline=False),
-        yaxis3=dict(showticklabels=False, showgrid=False, zeroline=False),
+        yaxis3=dict(showticklabels=False, showgrid=False, zeroline=False, range=[0, 2]),
         xaxis1=dict(showticklabels=False),
         xaxis2=dict(
             showticklabels=True, tickmode='array', tickvals=tick_vals, ticktext=tick_text, 
             showgrid=True, gridcolor="rgba(255,255,255,0.08)", 
-            tickfont=dict(size=12, family="Arial Black", color="white")
+            tickfont=dict(size=11, color="white") # Simplified font to match top strip
         ),
         xaxis3=dict(showticklabels=False, showgrid=False)
     )
