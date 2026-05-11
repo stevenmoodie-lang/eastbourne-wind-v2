@@ -88,18 +88,11 @@ if data and 'hourly' in data:
         hovertemplate='%{x}:00<br>%{customdata:.1f} kn<extra></extra>'
     ))
 
-    # Center Day Text (Mon 11 format)
     for d_date in day_df['date_only'].unique():
         group = day_df[day_df['date_only'] == d_date]
         center_idx = group.index[len(group)//2]
-        # Format date as 'Mon 11' (No leading zero)
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
-        
-        fig_top.add_annotation(
-            x=center_idx, y=1.15, text=f"<b>{date_label}</b>",
-            showarrow=False, font=dict(size=11), xanchor="center"
-        )
-        # Day Separator
+        fig_top.add_annotation(x=center_idx, y=1.15, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
         last_idx = group.index[-1]
         if last_idx < len(day_df) - 1:
             fig_top.add_vline(x=last_idx + 0.5, line_width=8, line_color="white")
@@ -108,8 +101,7 @@ if data and 'hourly' in data:
         height=120, margin=dict(t=30, b=5, l=5, r=5),
         template="plotly_white", bargap=0,
         xaxis=dict(type='category', showticklabels=False),
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False),
-        title=dict(text="<b>Daylight Focus</b>", font=dict(size=11), x=0.01)
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False)
     )
 
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
@@ -133,12 +125,7 @@ if data and 'hourly' in data:
 
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
-        # Format date as 'Mon' (No number)
-        fig_bot.add_annotation(
-            x=midday, y=1.02, yref="y1", 
-            text=f"<b>{midday.strftime('%a')}</b>",
-            showarrow=False, font=dict(size=9), yanchor="bottom"
-        )
+        fig_bot.add_annotation(x=midday, y=1.02, yref="y1", text=f"<b>{midday.strftime('%a')}</b>", showarrow=False, font=dict(size=9), yanchor="bottom")
         if i < len(sun_data) - 1:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
@@ -154,7 +141,19 @@ if data and 'hourly' in data:
         template="plotly_white", hovermode="x unified",
         xaxis2=dict(showticklabels=False), 
         yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False),
-        yaxis2=dict(title=None, showticklabels=False, fixedrange=True, showgrid=True), 
+        yaxis2=dict(
+            showticklabels=True, 
+            side="left", 
+            tickfont=dict(size=8, color="gray"),
+            ticksuffix=" ", # Just a tiny gap
+            showgrid=True,
+            dtick=10,        # Label every 10 knots
+            fixedrange=True,
+            layer="below traces",
+            tickmode="linear",
+            anchor="x",
+            position=0
+        ), 
         bargap=0
     )
 
