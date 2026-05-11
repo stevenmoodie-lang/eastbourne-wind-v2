@@ -12,7 +12,7 @@ st.markdown("""
     .main { background-color: #f0f2f6; }
     .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
-    """, unsafe_allow_index=True)
+    """, unsafe_allow_html=True) # Changed from unsafe_allow_index to unsafe_allow_html
 
 # --- DATA FETCHING ---
 @st.cache_data(ttl=1800)
