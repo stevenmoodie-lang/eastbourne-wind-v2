@@ -4,173 +4,154 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
-import pytz
 import numpy as np
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
 
+# --- CSS: MOBILE OPTIMIZATION ---
 st.markdown("""
     <style>
+        [data-testid="stHeader"], header { visibility: hidden; height: 0; }
+        .stAppViewContainer { top: -45px !important; }
         .stApp { background-color: #3d5a73; color: #f8f9fa; }
-        .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
-        .sub-text { font-size: 1.1rem; color: #d1d9e0; font-weight: 500; margin-bottom: 20px; }
-        .stButton button { background-color: #4e6a82; color: white; border: 1px solid #7f8c8d; }
+        .block-container { 
+            padding-top: 3.5rem !important; 
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        .custom-title {
+            text-align: center;
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 0.5rem;
+        }
     </style>
+    <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
 
-STATIONS = {
-    "Baring Head": {"lat": -41.405, "lon": 174.868},
-    "Eastbourne Beach": {"lat": -41.291, "lon": 174.894},
-    "Wellington Airport": {"lat": -41.327, "lon": 174.805}
-}
+# --- SETTINGS & RATINGS ---
+LAT, LON = -41.291, 174.894
 
-def get_direction_label(deg):
-    labels = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-    return labels[int((deg + 22.5) % 360 / 45)]
-
-def get_color(knots, opacity=1.0):
-    colors = {
-        "lightblue": f"rgba(173, 216, 230, {opacity})", "dodgerblue": f"rgba(30, 144, 255, {opacity})",
-        "green": f"rgba(0, 128, 0, {opacity})", "amber": f"rgba(255, 200, 50, {opacity})", 
-        "red": f"rgba(255, 0, 0, {opacity})", "darkred": f"rgba(139, 0, 0, {opacity})"
-    }
-    if knots < 5: return colors["lightblue"]
-    if knots <= 10: return colors["dodgerblue"]
-    if knots <= 15: return colors["green"]
-    if knots <= 19: return colors["amber"]
-    if knots <= 28: return colors["red"]
-    return colors["darkred"]
+def get_color(knots):
+    if knots <= 6: return "rgba(173, 216, 230, 1.0)"    
+    if knots <= 11: return "rgba(135, 206, 250, 1.0)"   
+    if knots <= 15: return "rgba(0, 128, 0, 1.0)"       
+    if knots <= 19: return "rgba(255, 200, 50, 1.0)"    
+    if knots <= 28: return "rgba(255, 0, 0, 1.0)"       
+    return "rgba(139, 0, 0, 1.0)"                       
 
 @st.cache_data(ttl=600)
-def get_weather_data(lat, lon, days):
+def get_dashboard_data():
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
-        "latitude": lat, "longitude": lon, "hourly": ["wind_speed_10m", "wind_direction_10m"],
-        "daily": "sunrise,sunset", "timezone": "Pacific/Auckland", "wind_speed_unit": "kmh", "forecast_days": days
+        "latitude": LAT, "longitude": LON,
+        "hourly": ["wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"],
+        "daily": ["sunrise", "sunset"],
+        "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
-    r = requests.get(url, params=params, timeout=10)
-    return r.json() if r.status_code == 200 else None
-
-@st.cache_data(ttl=3600)
-def get_tide_data(days):
-    start_time = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    times = pd.date_range(start=start_time, periods=days*24*12, freq='5min')
-    tide_heights = [1.0 + 0.6 * np.sin((t.timestamp() / 22357) * np.pi) for t in times]
-    return pd.DataFrame({'time': times, 'height': tide_heights})
-
-selection = st.sidebar.selectbox("Location", list(STATIONS.keys()))
-forecast_range = st.sidebar.radio("Range", ["7 Days", "3 Days"], index=0)
-days_to_fetch = 7 if forecast_range == "7 Days" else 3
-
-coords = STATIONS[selection]
-data = get_weather_data(coords["lat"], coords["lon"], days_to_fetch)
-tide_df = get_tide_data(days_to_fetch)
-
-nz_tz = pytz.timezone('Pacific/Auckland')
-now_nz = datetime.datetime.now(nz_tz).replace(tzinfo=None)
-
-if data and 'hourly' in data:
+    r = requests.get(url, params=params).json()
     df = pd.DataFrame({
-        'time': pd.to_datetime(data['hourly']['time']),
-        'wind': pd.Series(data['hourly']['wind_speed_10m']) * 0.539957,
-        'dir': data['hourly']['wind_direction_10m']
+        "time": pd.to_datetime(r["hourly"]["time"]),
+        "speed": r["hourly"]["wind_speed_10m"],
+        "gust": r["hourly"]["wind_gusts_10m"],
+        "dir": r["hourly"]["wind_direction_10m"]
     })
-    df['date_only'] = df['time'].dt.date
-    sun_data = pd.DataFrame({
-        'date': pd.to_datetime(data['daily']['time']).date, 
-        'sunrise': pd.to_datetime(data['daily']['sunrise']),
-        'sunset': pd.to_datetime(data['daily']['sunset'])
+    sun = pd.DataFrame({
+        "date": pd.to_datetime(r["daily"]["time"]).date,
+        "sunrise": pd.to_datetime(r["daily"]["sunrise"]),
+        "sunset": pd.to_datetime(r["daily"]["sunset"])
     })
-    df = df.merge(sun_data, left_on='date_only', right_on='date')
-    df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
-
-    idx_now = (df['time'] - now_nz).abs().idxmin()
     
-    # --- HEADER ---
-    t_col1, t_col2 = st.columns([10, 1])
-    with t_col1:
-        st.title("Eastbourne Wind")
-        st.markdown(f"<div class='sub-text'><b>{round(df.loc[idx_now, 'wind'])} kn</b> — {selection} ({get_direction_label(df.loc[idx_now, 'dir'])})</div>", unsafe_allow_html=True)
-    with t_col2:
-        if st.button("🔄"):
-            st.cache_data.clear()
-            st.rerun()
+    # Simple tide simulation (approximate 12.4h cycle)
+    tide_times = pd.date_range(start=df['time'].min(), periods=24*7, freq='h')
+    tide_heights = [1.0 + 0.6 * np.sin(2 * np.pi * (t.hour + t.minute/60) / 12.4) for t in tide_times]
+    df_tide = pd.DataFrame({"time": tide_times, "height": tide_heights})
+    
+    return df, sun, df_tide
 
-    # --- TOP DAILY HEATSTRIP ---
-    daily_summary = df[~df['is_night']].groupby('date_only').agg({'wind': 'mean', 'dir': lambda x: x.mode()[0]}).reset_index()
-    fig_top = go.Figure()
-    fig_top.add_trace(go.Bar(x=daily_summary['date_only'].astype(str), y=[1]*len(daily_summary), marker_color=[get_color(w) for w in daily_summary['wind']], showlegend=False, hoverinfo='none'))
+try:
+    df, sun, df_tide = get_dashboard_data()
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
 
-    for i, row in daily_summary.iterrows():
-        date_label = pd.to_datetime(row['date_only']).strftime('%a')
-        fig_top.add_annotation(x=str(row['date_only']), y=1.25, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=10, color="white"))
-        fig_top.add_annotation(x=str(row['date_only']), y=0.5, text=f"<b>{round(row['wind'])}</b>", showarrow=False, font=dict(size=11, color="white"))
-
-    fig_top.update_layout(height=80, margin=dict(t=20, b=0, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0.05, xaxis=dict(showticklabels=False, showgrid=False, showline=False), yaxis=dict(showticklabels=False, range=[0, 1.4], showgrid=False, showline=False))
-    st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
-
-    # --- MAIN GRAPHS ---
-    fig_bot = make_subplots(
+    # --- CREATE SUBPLOTS ---
+    fig = make_subplots(
         rows=3, cols=1, 
-        shared_xaxes=False, 
-        vertical_spacing=0.0, 
-        row_heights=[0.015, 0.15, 0.10] 
+        shared_xaxes=True, 
+        vertical_spacing=0.03,
+        row_heights=[0.18, 0.25, 0.15]
     )
-    
-    # 1. Hourly Direction Ribbon
-    for i in range(len(sun_data)):
-        day_start, day_end = sun_data.iloc[i]['sunrise'], sun_data.iloc[i]['sunset']
-        for s in range(3):
-            t0, t1 = day_start + s*((day_end-day_start)/3), day_start + (s+1)*((day_end-day_start)/3)
+
+    # 1. 3-SEGMENT ARROW RIBBON (Row 1)
+    for _, day in sun.iterrows():
+        sunrise, sunset = day['sunrise'], day['sunset']
+        seg_dur = (sunset - sunrise) / 3
+        for i in range(3):
+            t0, t1 = sunrise + (i*seg_dur), sunrise + ((i+1)*seg_dur)
             mask = (df['time'] >= t0) & (df['time'] < t1)
-            if not df[mask].empty:
-                w_mean, d_mean = df[mask]['wind'].mean(), df[mask]['dir'].mean()
-                fig_bot.add_trace(go.Bar(x=[t0+(t1-t0)/2], y=[1], width=(t1-t0).total_seconds()*1000, marker_color=get_color(w_mean), showlegend=False, hoverinfo='none'), row=1, col=1)
-                fig_bot.add_annotation(x=t0+(t1-t0)/2, y=0.5, text="➤", textangle=d_mean-90, showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
+            d = df[mask]
+            if not d.empty:
+                avg_speed = d['speed'].mean()
+                rads = np.deg2rad(d['dir'])
+                avg_dir = np.rad2deg(np.arctan2(np.sin(rads).mean(), np.cos(rads).mean())) % 360
+                
+                # Add the color block
+                fig.add_trace(go.Bar(
+                    x=[t0 + (t1-t0)/2], y=[1], width=(t1-t0).total_seconds() * 1000,
+                    marker_color=get_color(avg_speed), showlegend=False, hoverinfo='none'
+                ), row=1, col=1)
 
-    # 2. Wind Speed Line Graph (0.15)
-    for i in range(len(df)-1):
-        p1, p2 = df.iloc[i], df.iloc[i+1]
-        fig_bot.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']], mode='lines', line=dict(color=get_color(p1['wind'], opacity=0.2 if p1['is_night'] else 1.0), width=2.5), showlegend=False, hoverinfo='none'), row=2, col=1)
+                # Add Arrow & Speed text
+                heading = (avg_dir + 180) % 360
+                y_pos = 0.5 if (75 < avg_dir < 105 or 255 < avg_dir < 285) else (0.25 if 105 <= avg_dir <= 255 else 0.75)
+                
+                fig.add_annotation(x=t0 + (t1-t0)/2, y=y_pos, text="➤", xref="x", yref="y", showarrow=False, 
+                                   textangle=heading-90, font=dict(size=14, color="white"))
+                fig.add_annotation(x=t0 + (t1-t0)/2, y=-0.4, text=f"<b>{round(avg_speed)}</b>", xref="x", yref="y", 
+                                   showarrow=False, font=dict(size=11, color="white"))
 
-    for d_date in df['date_only'].unique():
-        day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
-        if not day_block.empty:
-            p = day_block.loc[day_block['wind'].idxmax()]
-            fig_bot.add_annotation(x=p['time'], y=p['wind'], text=f"<b>{round(p['wind'])}</b>", showarrow=False, yshift=12, xshift=-8, font=dict(size=11, color="white"), row=2, col=1)
-            fig_bot.add_annotation(x=p['time'], y=p['wind'], text="➤", textangle=p['dir']-90, showarrow=False, yshift=12, xshift=8, font=dict(size=9, color="white"), row=2, col=1)
-            v = day_block.loc[day_block['wind'].idxmin()]
-            fig_bot.add_annotation(x=v['time'], y=v['wind'], text=f"<b>{round(v['wind'])}</b>", showarrow=False, yshift=-12, xshift=-8, font=dict(size=10, color="#d1d9e0"), row=2, col=1)
-            fig_bot.add_annotation(x=v['time'], y=v['wind'], text="➤", textangle=v['dir']-90, showarrow=False, yshift=-12, xshift=8, font=dict(size=8, color="#d1d9e0"), row=2, col=1)
+    # 2. WIND SPEED LINES (Row 2)
+    fig.add_trace(go.Scatter(x=df['time'], y=df['gust'], fill='tonexty', fillcolor='rgba(255,255,255,0.05)', line=dict(width=0), showlegend=False), row=2, col=1)
+    fig.add_trace(go.Scatter(x=df['time'], y=df['speed'], line=dict(color='white', width=2), showlegend=False), row=2, col=1)
 
-    # 3. Tide Row (0.10)
-    fig_bot.add_trace(go.Scatter(x=tide_df['time'], y=tide_df['height'], fill='tozeroy', mode='lines', line=dict(color='#5dade2', width=1.1), fillcolor='rgba(93, 173, 226, 0.12)', showlegend=False, hoverinfo='none'), row=3, col=1)
-    
-    t_vals = tide_df['height'].values
-    for i in range(1, len(t_vals)-1):
-        if t_vals[i] > t_vals[i-1] and t_vals[i] > t_vals[i+1]:
-            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=t_vals[i], text=tide_df.iloc[i]['time'].strftime('%H:%M'), showarrow=False, yshift=10, font=dict(size=9, color="#5dade2"), row=3, col=1)
-        if t_vals[i] < t_vals[i-1] and t_vals[i] < t_vals[i+1]:
-            fig_bot.add_annotation(x=tide_df.iloc[i]['time'], y=t_vals[i], text=tide_df.iloc[i]['time'].strftime('%H:%M'), showarrow=False, yshift=-10, font=dict(size=9, color="#d1d9e0"), row=3, col=1)
+    # 3. TIDE SILHOUETTE (Row 3)
+    fig.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.2)', line=dict(color='#00d4ff', width=2), showlegend=False), row=3, col=1)
 
-    # Global Night Shading
-    for i in range(len(sun_data)-1):
-        fig_bot.add_vrect(x0=sun_data['sunset'].iloc[i], x1=sun_data['sunrise'].iloc[i+1], fillcolor="#1a2a3a", opacity=0.4, line_width=0, row="all")
+    # GLOBAL NIGHT SHADING & NOW LINE
+    for i in range(len(sun)-1):
+        fig.add_vrect(x0=sun.iloc[i]['sunset'], x1=sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.3)", layer="below", line_width=0)
+    fig.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
 
-    # Day labels
-    tick_vals = [sun_data.iloc[i]['sunrise'] + (sun_data.iloc[i]['sunset'] - sun_data.iloc[i]['sunrise']) / 2 for i in range(len(sun_data))]
-    tick_text = [f"<b>{pd.to_datetime(sun_data.iloc[i]['date']).strftime('%a')}</b>" for i in range(len(sun_data))]
-
-    fig_bot.update_layout(
-        height=400, margin=dict(t=0, b=0, l=5, r=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis1=dict(showticklabels=False, matches='x2', showline=False, zeroline=False),
-        xaxis2=dict(showticklabels=True, tickmode='array', tickvals=tick_vals, ticktext=tick_text, tickfont=dict(size=10, color="#d1d9e0"), showgrid=False, anchor='y2', showline=False, zeroline=False),
-        xaxis3=dict(showticklabels=False, matches='x2', showline=False, zeroline=False),
-        yaxis1=dict(showticklabels=False, range=[0, 1], showgrid=False, showline=False, zeroline=False),
-        yaxis2=dict(showticklabels=False, showgrid=True, gridcolor="rgba(255,255,255,0.03)", range=[0, df['wind'].max() * 1.3], showline=False, zeroline=False),
-        yaxis3=dict(showticklabels=False, showgrid=False, range=[0, 2.8], showline=False, zeroline=False)
+    # LAYOUT
+    fig.update_layout(
+        height=600,
+        margin=dict(l=10, r=10, t=30, b=20),
+        template="plotly_dark",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        bargap=0,
+        xaxis=dict(visible=False, fixedrange=True),
+        xaxis2=dict(visible=False, fixedrange=True),
+        xaxis3=dict(
+            showgrid=False, 
+            tickmode='array',
+            tickvals=[d + datetime.timedelta(hours=12) for d in sun['date']], 
+            ticktext=[f"<b>{d.strftime('%a')}</b>" for d in sun['date']], 
+            side="top", 
+            tickfont=dict(size=12, color="white"), 
+            fixedrange=True
+        ),
+        yaxis=dict(visible=False, range=[-0.8, 1.2], fixedrange=True),
+        yaxis2=dict(
+            title=dict(text="Knots", font=dict(size=10, color="white")), 
+            showgrid=True, gridcolor='rgba(255,255,255,0.05)', 
+            zeroline=False, fixedrange=True
+        ),
+        yaxis3=dict(visible=False, fixedrange=True)
     )
-    st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
-else:
-    st.error("Error loading forecast data. Please check your internet connection or station selection.")
+
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+except Exception as e:
+    st.error(f"Layout Error: {e}")
