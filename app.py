@@ -13,8 +13,8 @@ st.markdown("""
     <style>
         .block-container { padding-top: 1.5rem; padding-bottom: 0rem; }
         h1 { font-size: 1.5rem !important; margin-bottom: 0px !important; }
-        /* Add space between the two plotly charts */
-        .stPlotlyChart { margin-bottom: 25px !important; } 
+        /* Vertical space between the two plotly charts */
+        .stPlotlyChart { margin-bottom: 10px !important; } 
     </style>
 """, unsafe_allow_html=True)
 
@@ -68,7 +68,7 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- TOP GRAPH: DAYLIGHT FOCUS ---
+    # --- 1. TOP GRAPH: DAYLIGHT FOCUS ---
     day_df = df[~df['is_night']].copy().reset_index(drop=True)
     day_df['time_str'] = day_df['time'].dt.strftime('%a %H') 
 
@@ -81,6 +81,7 @@ if data and 'hourly' in data:
         hovertemplate='%{x}:00<br>%{customdata:.1f} kn<extra></extra>'
     ))
 
+    # Add large gaps (8px) between days
     prev_date = None
     for i, row in day_df.iterrows():
         current_date = row['time'].date()
@@ -94,50 +95,60 @@ if data and 'hourly' in data:
         prev_date = current_date
 
     fig_top.update_layout(
-        height=140, margin=dict(t=30, b=20, l=5, r=5),
+        height=140, margin=dict(t=30, b=10, l=5, r=5),
         template="plotly_white", bargap=0,
         xaxis=dict(type='category', tickangle=0, tickfont=dict(size=7), dtick=4),
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4]),
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.4], showgrid=False),
         title=dict(text="<b>Daylight Focus</b>", font=dict(size=11), x=0.01)
     )
 
-    # --- BOTTOM GRAPH: FULL TIMELINE ---
+    # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
     fig_bot = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=[0.15, 0.85])
     
+    # Heatstrip row
     for i in range(len(df)):
-        fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
+        fig_bot.add_trace(go.Bar(x=[df['time'][i]], y=[1], 
+                                marker_color="rgb(240,240,240)" if df['is_night'][i] else get_color(df['wind'][i]), 
+                                marker_line_width=0, showlegend=False, hoverinfo='none'), row=1, col=1)
     
+    # Line graph row
     for i in range(len(df)-1):
-        fig_bot.add_trace(go.Scatter(x=[df['time'][i], df['time'][i+1]], y=[df['wind'][i], df['wind'][i+1]], mode='lines', line=dict(color=get_color(df['wind'][i]), width=2.5), showlegend=False, hoverinfo='none'), row=2, col=1)
+        fig_bot.add_trace(go.Scatter(x=[df['time'][i], df['time'][i+1]], y=[df['wind'][i], df['wind'][i+1]], 
+                                     mode='lines', line=dict(color=get_color(df['wind'][i]), width=2.5), 
+                                     showlegend=False, hoverinfo='none'), row=2, col=1)
 
-    # REPOSITION DAY TEXT CLOSER TO HEATSTRIP
+    # Day annotations tucked close to the heatstrip
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
         fig_bot.add_annotation(
-            x=midday, y=1.05, yref="y1", # Lowered from 1.3 to 1.05
+            x=midday, y=1.02, yref="y1", 
             text=f"<b>{midday.strftime('%a %d')}</b>",
             showarrow=False, font=dict(size=9),
             yanchor="bottom"
         )
 
+    # Current time indicator
     idx_now = (df['time'] - now_nz).abs().idxmin()
     fig_bot.add_vline(x=df.loc[idx_now, 'time'], line_width=1.5, line_dash="dot", line_color="green")
     
     fig_bot.update_layout(
         height=280, margin=dict(t=15, b=0, l=5, r=5), 
         template="plotly_white", hovermode="x unified",
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.5], showgrid=False), # Tightened range
-        yaxis2=dict(title="kn", fixedrange=True), 
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.45], showgrid=False),
+        yaxis2=dict(title=None, showticklabels=False, fixedrange=True, showgrid=True), 
         bargap=0
     )
 
-    # Display 
+    # --- RENDER ---
     st.title(f"🌬️ {selection}: {df.loc[idx_now, 'wind']:.1f} kn")
+    
+    # Render top chart
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
     
-    # Adding a clear divider for more vertical space
-    st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+    # Manual Spacer for a bigger gap between the two graphs
+    st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
     
+    # Render bottom chart
     st.plotly_chart(fig_bot, use_container_width=True, config={'displayModeBar': False})
 
 else:
