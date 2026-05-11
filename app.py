@@ -48,7 +48,6 @@ def get_weather_data():
         "latitude": -41.405, "longitude": 174.867, 
         "hourly": ["wind_speed_10m", "wind_direction_10m"], 
         "daily": ["sunrise", "sunset"], 
-        "past_days": 2, # Increased to ensure we have sun data for the start of the chart
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
     r = requests.get(url, params=params).json()
@@ -61,7 +60,7 @@ def get_weather_data():
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    # Correct NZ Time for the "Now" line
+    # Ensure "Now" is in NZST (UTC+12)
     now = (datetime.datetime.utcnow() + datetime.timedelta(hours=12)).replace(microsecond=0)
     max_wind = df_hourly['speed'].max()
     all_time_min, all_time_max = df_hourly['time'].min(), df_hourly['time'].max()
@@ -94,21 +93,17 @@ try:
     # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # MANDATORY NIGHT SHADING
+    # FORCED NIGHT SHADING: Draw blocks for every day independently
     night_shapes = []
-    
-    # 1. Shade the very beginning of the chart (Start to first Sunrise)
-    night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=all_time_min, x1=df_sun.iloc[0]['sunrise'], y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
-    
-    # 2. Cycle through gaps: Sunset of day N to Sunrise of day N+1
-    for i in range(len(df_sun)):
-        current_sunset = df_sun.iloc[i]['sunset']
-        if i + 1 < len(df_sun):
-            next_sunrise = df_sun.iloc[i+1]['sunrise']
-            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_sunset, x1=next_sunrise, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
-        else:
-            # Final block: Last sunset to end of chart
-            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=current_sunset, x1=all_time_max, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
+    for _, row in df_sun.iterrows():
+        day_start = pd.Timestamp(row['date'])
+        day_end = day_start + pd.Timedelta(days=1)
+        
+        # Block 1: Midnight to Sunrise
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=day_start, x1=row['sunrise'], y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
+        
+        # Block 2: Sunset to next Midnight
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=row['sunset'], x1=day_end, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
 
     # Wind Lines
     for i in range(len(df_hourly)-1):
@@ -127,7 +122,7 @@ try:
         fig_main.add_annotation(x=day['sunrise'], y=-4.5, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
         fig_main.add_annotation(x=day['sunset'], y=-4.5, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
 
-    # Tide Peak Times (Restored to white for visibility)
+    # Tide Peak Times (High-visibility white)
     for i in range(1, len(df_tide)-1):
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
