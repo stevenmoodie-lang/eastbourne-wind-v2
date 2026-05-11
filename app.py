@@ -24,19 +24,19 @@ STATIONS = {
 }
 
 def get_color(knots, opacity=1.0):
-    # Lighter goldenrod (rgb 238, 195, 82) for better visibility.
+    # Lighter Amber (rgb 255, 191, 0) - stands out but isn't "muddy"
     colors = {
         "lightblue": f"rgba(173, 216, 230, {opacity})",
         "dodgerblue": f"rgba(30, 144, 255, {opacity})",
         "green": f"rgba(0, 128, 0, {opacity})",
-        "goldenrod_light": f"rgba(238, 195, 82, {opacity})", # Lightened up by ~15%
+        "amber": f"rgba(255, 191, 0, {opacity})", 
         "red": f"rgba(255, 0, 0, {opacity})",
         "darkred": f"rgba(139, 0, 0, {opacity})"
     }
     if knots < 5: return colors["lightblue"]
     if knots <= 10: return colors["dodgerblue"]
     if knots <= 15: return colors["green"]
-    if knots <= 19: return colors["goldenrod_light"]
+    if knots <= 19: return colors["amber"]
     if knots <= 28: return colors["red"]
     return colors["darkred"]
 
@@ -76,66 +76,52 @@ if data and 'hourly' in data:
     df = df.merge(sun_data, left_on='date_only', right_on='date')
     df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- 1. TOP GRAPH: DAYLIGHT FOCUS (With Rounded Squares) ---
+    # --- 1. TOP GRAPH: DAYLIGHT FOCUS (Rounded Bar Heatstrip) ---
     day_df = df[~df['is_night']].copy().reset_index(drop=True)
-    
+    day_df['time_str'] = day_df['time'].dt.strftime('%Y-%m-%d %H:%M') 
+
     fig_top = go.Figure()
     
-    # Calculate unique x positions and dynamic marker size
-    num_bars = len(day_df)
-    unique_dates = day_df['date_only'].unique()
-    
-    for d_date in unique_dates:
-        group = day_df[day_df['date_only'] == d_date]
-        
-        # Draw daylight squares with rounded corners
-        fig_top.add_trace(go.Scatter(
-            x=group['time'],
-            y=[1] * len(group),
-            mode='markers+text',
-            name=str(d_date),
-            marker=dict(
-                color=[get_color(w) for w in group['wind']],
-                symbol='square', # Base shape
-                size=26,        # Adjust size to fill the width (calculated for 7 days)
-                cornerradius=8, # FIXED: Add rounded corners
-                line=dict(color='white', width=2) # Add white space between blocks
-            ),
-            text=[f"<b>{round(w)}</b>" for w in group['wind']],
-            textposition='middle center',
-            textfont=dict(size=12, color='white'), # Match previous style
-            showlegend=False,
-            hoverinfo='none', # Turn off standard hover as we have text/vlines
-        ))
+    # Use Bar chart for cornerradius support
+    fig_top.add_trace(go.Bar(
+        x=day_df['time_str'],
+        y=[1] * len(day_df),
+        marker=dict(
+            color=[get_color(w) for w in day_df['wind']],
+            line=dict(color='white', width=2),
+            cornerradius=10 # Rounded corners for the boxes
+        ),
+        showlegend=False,
+        hoverinfo='none'
+    ))
 
-        # Add Day Header
-        center_time = group['time'].iloc[len(group)//2]
+    for d_date in day_df['date_only'].unique():
+        group = day_df[day_df['date_only'] == d_date]
+        center_idx = group.index[len(group)//2]
+        avg_knots = round(group['wind'].mean())
         date_label = f"{group.iloc[0]['time'].strftime('%a')} {group.iloc[0]['time'].day}"
         
-        fig_top.add_annotation(x=center_time, y=1.28, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11), xanchor="center")
+        # Day Label
+        fig_top.add_annotation(x=day_df['time_str'].iloc[center_idx], y=1.25, text=f"<b>{date_label}</b>", showarrow=False, font=dict(size=11))
         
-        # Day Separator (Wide white line)
-        last_time = group['time'].iloc[-1]
-        # Calculate separation (1 hour)
-        sep_time = last_time + pd.Timedelta(hours=1)
-        if sep_time < day_df['time'].iloc[-1]:
-            fig_top.add_vline(x=last_time + pd.Timedelta(minutes=30), line_width=12, line_color="white", opacity=1)
+        # Rounded Average Value inside the strip
+        fig_top.add_annotation(
+            x=day_df['time_str'].iloc[center_idx], y=0.5, 
+            text=f"<b>{avg_knots} kn</b>", 
+            showarrow=False, 
+            font=dict(size=13, color="white")
+        )
+        
+        # Visual day break
+        last_idx = group.index[-1]
+        if last_idx < len(day_df) - 1:
+            fig_top.add_vline(x=day_df['time_str'].iloc[last_idx], line_width=10, line_color="white")
 
     fig_top.update_layout(
-        height=125, 
-        margin=dict(t=35, b=0, l=5, r=5), 
-        template="plotly_white", 
-        xaxis=dict(
-            showticklabels=False, 
-            type='date', 
-            showgrid=False,
-            # Force dtick to 1 hour to align marks with separation vlines
-            dtick=3600000, 
-            # Expand slightly to fit standard markers on first/last day
-            range=[day_df['time'].min() - pd.Timedelta(minutes=30), day_df['time'].max() + pd.Timedelta(minutes=30)]
-        ), 
-        yaxis=dict(showticklabels=False, fixedrange=True, range=[0.4, 1.4], showgrid=False), # Center the squares
-        bargap=0
+        height=130, margin=dict(t=35, b=0, l=5, r=5), 
+        template="plotly_white", bargap=0,
+        xaxis=dict(showticklabels=False, showgrid=False),
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.5], showgrid=False)
     )
 
     # --- 2. BOTTOM GRAPH: LINE + TIMELINE ---
@@ -157,13 +143,12 @@ if data and 'hourly' in data:
             showlegend=False, hoverinfo='none'
         ), row=2, col=1)
 
-    # REFINED PEAKS AND VALLEYS 
+    # REFINED PEAKS AND VALLEYS
     for d_date in df['date_only'].unique():
         day_block = df[(df['date_only'] == d_date) & (~df['is_night'])]
         if not day_block.empty:
             peak = day_block.loc[day_block['wind'].idxmax()]
             valley = day_block.loc[day_block['wind'].idxmin()]
-            
             fig_bot.add_annotation(x=peak['time'], y=peak['wind'], text=f"<b>{round(peak['wind'])}</b>", 
                                    showarrow=False, yshift=12, font=dict(size=10, color="black"), row=2, col=1)
             if peak['time'] != valley['time']:
@@ -192,7 +177,6 @@ if data and 'hourly' in data:
         bargap=0
     )
 
-    # --- RENDER ---
     st.title(f"🌬️ {selection}: {round(df.loc[idx_now, 'wind'])} kn")
     st.plotly_chart(fig_top, use_container_width=True, config={'displayModeBar': False})
     st.markdown("<div style='margin-bottom: 25px;'></div>", unsafe_allow_html=True)
