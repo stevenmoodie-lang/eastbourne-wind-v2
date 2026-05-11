@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, time # Added time here
 import pytz
 
 # --- PAGE CONFIG ---
@@ -86,7 +86,7 @@ if data and 'hourly' in data:
             hoverinfo='none'
         ))
 
-    # Trace for hover
+    # Invisible trace for hover
     fig.add_trace(go.Scatter(
         x=plot_df['time'], y=plot_df['wind'],
         mode='markers', marker=dict(opacity=0),
@@ -110,16 +110,14 @@ if data and 'hourly' in data:
         xref="x", yref="paper", line=dict(color="green", width=2, dash="dot")
     )
 
-    # --- X-AXIS DAYTIME LABEL LOGIC ---
+    # --- X-AXIS DAYTIME LABEL LOGIC (FIXED) ---
     if hide_night:
-        # In Hidden Night mode, we label the start of each day segment
         day_starts = plot_df.groupby(plot_df['time'].dt.date)['time'].first()
         tickvals = day_starts.tolist()
         ticktext = [t.strftime("%a %d %b") for t in day_starts]
     else:
-        # In Full mode, we place the label at Midday (12:00) so it's in the daytime
-        # and doesn't get buried in the grey night bars.
-        tickvals = [t.replace(hour=12) for t in sun_data['date']]
+        # FIX: Combine the date with a noon time object to create a valid datetime
+        tickvals = [datetime.combine(d, time(12, 0)) for d in sun_data['date']]
         ticktext = [t.strftime("%a %d %b") for t in tickvals]
 
     fig.update_layout(
