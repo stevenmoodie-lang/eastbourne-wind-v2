@@ -54,18 +54,20 @@ def get_weather_data():
     }
     r = requests.get(url, params=params).json()
     
-    # Process all times to naive local for unified comparison
+    # Robust Time Handling
+    def to_nz_naive(series):
+        return pd.to_datetime(series, utc=True).dt.tz_convert('Pacific/Auckland').dt.tz_localize(None)
+
     df = pd.DataFrame({
-        "time": pd.to_datetime(r["hourly"]["time"]).tz_localize(None), 
+        "time": to_nz_naive(r["hourly"]["time"]), 
         "speed": r["hourly"]["wind_speed_10m"], 
         "dir": r["hourly"]["wind_direction_10m"]
     })
     
-    # FIXED: Removed .dt as pd.to_datetime returns an index/series that handles tz_localize directly here
     sun = pd.DataFrame({
         "date": pd.to_datetime(r["daily"]["time"]).date, 
-        "sunrise": pd.to_datetime(r["daily"]["sunrise"]).tz_localize(None), 
-        "sunset": pd.to_datetime(r["daily"]["sunset"]).tz_localize(None)
+        "sunrise": to_nz_naive(r["daily"]["sunrise"]), 
+        "sunset": to_nz_naive(r["daily"]["sunset"])
     })
     
     t_range = pd.date_range(start=df['time'].min(), end=df['time'].max(), freq='15min')
@@ -74,7 +76,7 @@ def get_weather_data():
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    now = datetime.datetime.now().replace(microsecond=0)
+    now = datetime.datetime.now()
     max_wind = df_hourly['speed'].max()
     crop_start, crop_end = df_sun['sunrise'].min(), df_sun['sunset'].max()
 
@@ -104,49 +106,49 @@ try:
     # --- 2. MAIN DASHBOARD ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
 
-    # Wind Traces (Sync fixed with segment midpoint check)
+    # Wind Traces
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
-        midpoint = p1['time'] + (p2['time'] - p1['time']) / 2
-        night_mode = not is_daylight(midpoint)
-        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], 0.12 if night_mode else 1.0), width=1.5), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
+        mid = p1['time'] + (p2['time'] - p1['time']) / 2
+        night = not is_daylight(mid)
+        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], 0.12 if night else 1.0), width=1.5), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
 
     # Tide Traces
-    day_tide_x, day_tide_y = [], []
-    night_tide_x, night_tide_y = [], []
+    dt_x, dt_y = [], []
+    nt_x, nt_y = [], []
     for i, row in df_tide.iterrows():
         if is_daylight(row['time']):
-            day_tide_x.extend([row['time'], None]); day_tide_y.extend([row['height'], None])
+            dt_x.extend([row['time'], None]); dt_y.extend([row['height'], None])
         else:
-            night_tide_x.extend([row['time'], None]); night_tide_y.extend([row['height'], None])
+            nt_x.extend([row['time'], None]); nt_y.extend([row['height'], None])
 
-    fig_main.add_trace(go.Scatter(x=day_tide_x, y=day_tide_y, line=dict(color="white", width=0.8), fill='tozeroy', fillcolor="rgba(255,255,255,0.03)", mode='lines', showlegend=False), row=2, col=1)
-    fig_main.add_trace(go.Scatter(x=night_tide_x, y=night_tide_y, line=dict(color="rgba(255,255,255,0.08)", width=0.8), mode='lines', showlegend=False), row=2, col=1)
+    fig_main.add_trace(go.Scatter(x=dt_x, y=dt_y, line=dict(color="white", width=0.8), fill='tozeroy', fillcolor="rgba(255,255,255,0.03)", mode='lines', showlegend=False), row=2, col=1)
+    fig_main.add_trace(go.Scatter(x=nt_x, y=nt_y, line=dict(color="rgba(255,255,255,0.08)", width=0.8), mode='lines', showlegend=False), row=2, col=1)
 
-    # UI Markers & Labels
-    for idx, day in df_sun.iterrows():
+    # UI Shading & Markers
+    for i, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
         fig_main.add_vline(x=midday, line_width=0.5, line_dash="dot", line_color="rgba(255,255,255,0.1)")
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{day['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.5)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunrise'], y=-2, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.25)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunset'], y=-2, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.25)"), row=1, col=1)
-
-        d_data = df_hourly[(df_hourly['time'] >= day['sunrise']) & (df_hourly['time'] <= day['sunset'])]
+        fig_main.add_annotation(x=day['sunrise'], y=-2, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.2)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunset'], y=-2, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=6, color="rgba(255,255,255,0.2)"), row=1, col=1)
+        
+        # Fixed Daily Labels
+        d_data = df_hourly[df_hourly['time'].dt.date == day['date']]
         if not d_data.empty:
-            for f, off in [(d_data.loc[d_data['speed'].idxmax()], 3.5), (d_data.loc[d_data['speed'].idxmin()], -3.5)]:
+            hi, lo = d_data.loc[d_data['speed'].idxmax()], d_data.loc[d_data['speed'].idxmin()]
+            for f, off in [(hi, 3.5), (lo, -3.5)]:
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + (off/2.5), text="➤", textangle=((f['dir']+180)%360)-90, showarrow=False, font=dict(size=6, color="white"), row=1, col=1)
                 fig_main.add_annotation(x=f['time'], y=f['speed'] + off, text=f"<b>{round(f['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"), row=1, col=1)
 
-    # Tide Peak Labels (Dimmed)
+    # Tide Labels
     for i in range(1, len(df_tide)-1):
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
             t = df_tide.iloc[i]
-            night_mode = not is_daylight(t['time'])
-            label_alpha = 0.05 if night_mode else 0.4 
-            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color=f"rgba(255,255,255,{label_alpha})"), yshift=7 if c > p else -7, row=2, col=1)
+            alpha = 0.05 if not is_daylight(t['time']) else 0.4
+            fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=7, color=f"rgba(255,255,255,{alpha})"), yshift=7 if c > p else -7, row=2, col=1)
 
-    # Night Shading
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.3)", layer="below", line_width=0)
 
@@ -156,4 +158,4 @@ try:
     st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False})
 
 except Exception as e:
-    st.error(f"Layout Error: {e}")
+    st.error(f"Sync Error: {e}")
