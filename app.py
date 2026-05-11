@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime, time
 import pytz
 
@@ -64,89 +65,92 @@ if data and 'hourly' in data:
         'sunrise': pd.to_datetime(daily['sunrise']),
         'sunset': pd.to_datetime(daily['sunset'])
     })
+
     df = df.merge(sun_data, left_on='date_only', right_on='date')
+    df['is_night'] = (df['time'] < df['sunrise']) | (df['time'] > df['sunset'])
 
-    # --- PLOTTING (SINGLE AXIS MODE) ---
-    fig = go.Figure()
+    # --- PLOTTING ---
+    fig = make_subplots(
+        rows=2, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.04,
+        row_heights=[0.2, 0.8] # Slimmed the top row further
+    )
 
-    # 1. THE HEATSTRIP (Now at the bottom of the graph)
-    # We use very tall bars that go from y=-2 to y=0
+    # 1. HEATSTRIP (Row 1)
     for i in range(len(df)):
-        is_night = (df.loc[i, 'time'] < df.loc[i, 'sunrise']) or (df.loc[i, 'time'] > df.loc[i, 'sunset'])
-        color = "rgb(230, 230, 230)" if is_night else get_color(df.loc[i, 'wind'])
+        knots = df.loc[i, 'wind']
+        is_night = df.loc[i, 'is_night']
+        bar_color = "rgb(230, 230, 230)" if is_night else get_color(knots)
         
         fig.add_trace(go.Bar(
-            x=[df.loc[i, 'time']], y=[2.5], # Height of the color bar
-            base=-2.5, # Starts below zero
-            marker_color=color, marker_line_width=0,
+            x=[df.loc[i, 'time']], y=[1],
+            marker_color=bar_color, marker_line_width=0,
             showlegend=False, hoverinfo='none'
-        ))
+        ), row=1, col=1)
 
-    # 2. WIND LINE (The main event)
-    # Drawing segments for the color line
+    # 2. LINE GRAPH (Row 2)
     for i in range(len(df) - 1):
         p1, p2 = df.iloc[i], df.iloc[i+1]
         fig.add_trace(go.Scatter(
             x=[p1['time'], p2['time']], y=[p1['wind'], p2['wind']],
             mode='lines', line=dict(color=get_color(p1['wind']), width=3),
             showlegend=False, hoverinfo='none'
-        ))
+        ), row=2, col=1)
 
-    # Transparent markers for unified hover
     fig.add_trace(go.Scatter(
-        x=df['time'], y=df['wind'], mode='markers',
-        marker=dict(opacity=0), name="Wind", showlegend=False
-    ))
+        x=df['time'], y=df['wind'], mode='markers', marker=dict(opacity=0),
+        name="Wind", showlegend=False
+    ), row=2, col=1)
 
-    # 3. NIGHT SHADING & ICONS
-    y_max = df['wind'].max() * 1.1
+    # 3. ANNOTATIONS & SHADING
     for i in range(len(sun_data)):
         midday = datetime.combine(sun_data['date'].iloc[i], time(12, 0))
+        label_size = 9 if days_to_fetch == 7 else 11
         
-        # Day Labels floating at the top
         fig.add_annotation(
-            x=midday, y=y_max, text=f"<b>{midday.strftime('%a %d')}</b>",
-            showarrow=False, font=dict(size=10), yanchor="top"
+            x=midday, y=1.4, yref="y1",
+            text=f"<b>{midday.strftime('%a %d')}</b>",
+            showarrow=False, font=dict(size=label_size)
         )
         
         if i < len(sun_data) - 1:
             sunset = sun_data['sunset'].iloc[i]
             sunrise_next = sun_data['sunrise'].iloc[i+1]
+            mid_night = sunset + (sunrise_next - sunset) / 2
             
-            # Night Shading
-            fig.add_vrect(x0=sunset, x1=sunrise_next, fillcolor="gray", opacity=0.1, line_width=0)
-            
-            # Moon Icon floating in the night area
             fig.add_annotation(
-                x=sunset + (sunrise_next - sunset)/2, y=-1.25,
+                x=mid_night, y=0.5, yref="y1",
                 text="🌙", showarrow=False, font=dict(size=12)
+            )
+            
+            fig.add_vrect(
+                x0=sunset, x1=sunrise_next,
+                fillcolor="gray", opacity=0.08, line_width=0, row=2, col=1
             )
 
     # NOW line
     idx_now = (df['time'] - now_nz).abs().idxmin()
-    fig.add_vline(x=df.loc[idx_now, 'time'], line_width=2, line_dash="dot", line_color="green")
+    closest_time = df.loc[idx_now, 'time']
+    fig.add_vline(x=closest_time, line_width=2, line_dash="dot", line_color="green")
 
-    # --- LAYOUT OPTIMIZATION ---
     fig.update_layout(
-        height=400, # Shorter height is better for mobile scrolling
-        margin=dict(l=10, r=10, t=30, b=20),
+        height=380, # Ultra-compact height
         template="plotly_white",
         hovermode="x unified",
-        bargap=0,
-        xaxis=dict(showgrid=False, zeroline=False),
-        yaxis=dict(
-            title="Knots",
-            range=[-2.5, y_max], # Room at the bottom for the heatstrip
-            fixedrange=True      # Prevents accidental zooming on mobile
-        ),
-        legend=dict(orientation="h")
+        xaxis2=dict(showticklabels=True, title=""),
+        yaxis=dict(showticklabels=False, fixedrange=True, range=[0, 1.8], showgrid=False),
+        yaxis2=dict(title="kn", rangemode="tozero", fixedrange=True),
+        margin=dict(t=30, b=10, l=10, r=10), # Tight margins
+        bargap=0
     )
 
-    st.subheader(f"🌬️ {selection} ({forecast_range})")
+    st.subheader(f"🌬️ {selection}")
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     
-    # Big Metric for mobile quick-view
-    st.metric("Current Wind", f"{df.loc[idx_now, 'wind']:.1f} Knots")
+    # Using columns for the metric to save even more vertical space
+    c1, c2 = st.columns([1, 1])
+    c1.metric("Now", f"{df.loc[idx_now, 'wind']:.1f} kn")
 
 else:
     st.error("Could not load weather data.")
