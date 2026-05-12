@@ -27,7 +27,6 @@ st.markdown("""
 
 # --- TIDE MODEL (Wellington Harbor) ---
 def calculate_wellington_tide(times):
-    # Fixed reference point for the tide cycle
     t_ref = pd.Timestamp("2026-05-12 00:10:00") 
     hours = (times - t_ref).total_seconds() / 3600.0
     m2 = 0.45 * np.cos(2 * np.pi * hours / 12.42)
@@ -61,10 +60,9 @@ def get_weather_data():
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    # Pinned to Wellington Time
     now = pd.Timestamp.now(tz='Pacific/Auckland').tz_localize(None)
     max_wind = df_hourly['speed'].max()
-    all_time_min, all_time_max = df_hourly['time'].min(), df_hourly['time'].max()
+    all_min, all_max = df_hourly['time'].min(), df_hourly['time'].max()
 
     def check_daylight(t, sun_df):
         match = sun_df[sun_df['date'] == t.date()]
@@ -94,17 +92,24 @@ try:
     # --- 2. MAIN CHARTS ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # ADDING NIGHT BOXES: Using add_vrect to prevent layout overwrites
+    # SOLUTION: Use a Scatter-Fill trace for Night Shading (More reliable than VRECT)
     for _, row in df_sun.iterrows():
-        d_start = pd.Timestamp(row['date'])
-        d_end = d_start + pd.Timedelta(days=1)
-        
-        # Morning shade
-        fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="black", opacity=0.4, layer="below", line_width=0, row="all", col=1)
-        # Evening shade
-        fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="black", opacity=0.4, layer="below", line_width=0, row="all", col=1)
+        # Night blocks (Midnight to Sunrise and Sunset to Midnight)
+        for t0, t1 in [(pd.Timestamp(row['date']), row['sunrise']), (row['sunset'], pd.Timestamp(row['date']) + pd.Timedelta(days=1))]:
+            # Add to Top Plot (Wind)
+            fig_main.add_trace(go.Scatter(
+                x=[t0, t1, t1, t0], y=[-10, -10, 100, 100], 
+                fill="toself", fillcolor="rgba(0,0,0,0.5)", 
+                line=dict(width=0), hoverinfo="none", showlegend=False
+            ), row=1, col=1)
+            # Add to Bottom Plot (Tide)
+            fig_main.add_trace(go.Scatter(
+                x=[t0, t1, t1, t0], y=[0, 0, 3, 3], 
+                fill="toself", fillcolor="rgba(0,0,0,0.5)", 
+                line=dict(width=0), hoverinfo="none", showlegend=False
+            ), row=2, col=1)
 
-    # Wind Traces
+    # Wind Traces (Segmented for night-time alpha)
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         midpoint = p1['time'] + (p2['time']-p1['time'])/2
@@ -114,7 +119,7 @@ try:
     # Tide Trace
     fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.7)", width=1.3), fill='tozeroy', fillcolor="rgba(255,255,255,0.15)", mode='lines', showlegend=False), row=2, col=1)
 
-    # Labels and Annotations
+    # Day/Sunrise/Sunset Labels
     for _, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{pd.to_datetime(day['date']).strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.7)"), row=1, col=1)
@@ -128,14 +133,14 @@ try:
             t = df_tide.iloc[i]
             fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8, color="white"), yshift=10 if c > p else -10, row=2, col=1)
 
-    # ADD "NOW" LINE LAST (Ensures it stays on top of shading)
+    # Vertical "Now" Line
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.9)
 
     fig_main.update_layout(
         height=230, margin=dict(l=10, r=10, t=5, b=5),
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False, range=[all_time_min, all_time_max]),
-        xaxis2=dict(visible=False, range=[all_time_min, all_time_max]),
+        xaxis=dict(visible=False, range=[all_min, all_max]),
+        xaxis2=dict(visible=False, range=[all_min, all_max]),
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, showticklabels=False, range=[-9, max_wind + 10]),
         yaxis2=dict(visible=False, range=[0, 2.45])
     )
