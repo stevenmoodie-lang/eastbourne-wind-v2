@@ -27,6 +27,15 @@ st.markdown("""
             margin-bottom: 0.3rem;
             white-space: nowrap;
         }
+        .section-label {
+            opacity: 0.5;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-top: 1.5rem;
+            margin-bottom: 0.2rem;
+            text-align: left;
+            padding-left: 5px;
+        }
     </style>
     <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
@@ -50,7 +59,7 @@ def get_weather_data():
         "latitude": LAT, "longitude": LON,
         "hourly": ["wind_speed_10m", "wind_direction_10m"],
         "daily": ["sunrise", "sunset"],
-        "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
+        "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 14
     }
     r = requests.get(url, params=params).json()
     df = pd.DataFrame({
@@ -65,9 +74,7 @@ def get_weather_data():
     })
     return df, sun
 
-try:
-    df_hourly, df_sun = get_weather_data()
-    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
+def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
     max_wind = df_hourly['speed'].max()
     crop_start, crop_end = df_sun['sunrise'].min(), df_sun['sunset'].max()
 
@@ -109,30 +116,42 @@ try:
     # --- 2. COMPACT WIND DASHBOARD ---
     fig_main = go.Figure()
 
-    # WIND PLOT
+    # WIND PLOT (Processing segments for day/night alpha)
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
-        day_info = df_sun[df_sun['date'] == p1['time'].date()].iloc[0]
+        # Match sunrise/sunset for the specific date of point 1
+        day_info_match = df_sun[df_sun['date'] == p1['time'].date()]
+        if day_info_match.empty: continue
+        day_info = day_info_match.iloc[0]
+        
         sr, ss = day_info['sunrise'], day_info['sunset']
         transition_points = sorted([t for t in [sr, ss] if p1['time'] < t < p2['time']])
         current_times = [p1['time']] + transition_points + [p2['time']]
+        
         for j in range(len(current_times)-1):
             t_start, t_end = current_times[j], current_times[j+1]
             if t_end < crop_start or t_start > crop_end: continue
-            frac = (t_start - p1['time']) / (p2['time'] - p1['time']) if p2['time'] != p1['time'] else 0
+            
+            # Interpolate speed for the transition point
+            duration = (p2['time'] - p1['time']).total_seconds()
+            frac = (t_start - p1['time']).total_seconds() / duration if duration > 0 else 0
             interp_speed = p1['speed'] + frac * (p2['speed'] - p1['speed'])
+            
             is_night = t_start < sr or t_start >= ss
             alpha = 0.12 if is_night else 1.0
+            
             fig_main.add_trace(go.Scatter(
-                x=[t_start, t_end], y=[interp_speed, interp_speed + (p2['speed']-p1['speed']) * ((t_end-t_start)/(p2['time']-p1['time']))],
+                x=[t_start, t_end], 
+                y=[interp_speed, interp_speed + (p2['speed']-p1['speed']) * ((t_end-t_start).total_seconds()/duration)],
                 line=dict(color=get_color(interp_speed, alpha), width=2 if not is_night else 1),
                 mode='lines', showlegend=False, hoverinfo='skip'
             ))
 
-    # Annotations
+    # Annotations & V-Rects
     for _, day_sun in df_sun.iterrows():
         midpoint = day_sun['sunrise'] + (day_sun['sunset'] - day_sun['sunrise']) / 2
         fig_main.add_annotation(x=midpoint, y=max_wind + 6, text=f"<b>{day_sun['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.6)"))
+        
         day_mask = (df_hourly['time'] >= day_sun['sunrise']) & (df_hourly['time'] <= day_sun['sunset'])
         day_data = df_hourly[day_mask]
         if not day_data.empty:
@@ -144,7 +163,8 @@ try:
     for i in range(len(df_sun)-1):
         fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
     
-    fig_main.add_vline(x=now, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
+    if show_now_line and now_ts:
+        fig_main.add_vline(x=now_ts, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
 
     fig_main.update_layout(
         height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
@@ -152,6 +172,28 @@ try:
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 10])
     )
     st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': True})
+
+# --- EXECUTION ---
+try:
+    df_hourly_all, df_sun_all = get_weather_data()
+    now_nz = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
+
+    # BLOCK 1: DAYS 1-7
+    st.markdown('<div class="section-label">DAYS 1 - 7</div>', unsafe_allow_html=True)
+    sun_1 = df_sun_all.iloc[:7]
+    mask_1 = (df_hourly_all['time'] >= pd.Timestamp(sun_1.iloc[0]['date'])) & \
+             (df_hourly_all['time'] < pd.Timestamp(sun_1.iloc[-1]['date']) + pd.Timedelta(days=1))
+    render_forecast_block(df_hourly_all[mask_1], sun_1, show_now_line=True, now_ts=now_nz)
+
+    # Visual Separator
+    st.markdown("<hr style='border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 1rem 0;'>", unsafe_allow_html=True)
+
+    # BLOCK 2: DAYS 8-14
+    st.markdown('<div class="section-label">DAYS 8 - 14</div>', unsafe_allow_html=True)
+    sun_2 = df_sun_all.iloc[7:14]
+    mask_2 = (df_hourly_all['time'] >= pd.Timestamp(sun_2.iloc[0]['date'])) & \
+             (df_hourly_all['time'] < pd.Timestamp(sun_2.iloc[-1]['date']) + pd.Timedelta(days=1))
+    render_forecast_block(df_hourly_all[mask_2], sun_2, show_now_line=False)
 
 except Exception as e:
     st.error(f"Layout Error: {e}")
