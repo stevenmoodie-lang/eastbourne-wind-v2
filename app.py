@@ -146,7 +146,7 @@ try:
     fig_main.add_vline(x=now, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
 
     fig_main.update_layout(
-        height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        height=100, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, fixedrange=False, range=[crop_start, crop_end]), 
         yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, fixedrange=True, showticklabels=False, range=[-5, max_wind + 10])
     )
