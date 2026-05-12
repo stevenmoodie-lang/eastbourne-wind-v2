@@ -25,8 +25,9 @@ st.markdown("""
     <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
 
-# --- TIDE MODEL ---
+# --- TIDE MODEL (Wellington Harbor) ---
 def calculate_wellington_tide(times):
+    # Fixed reference point for the tide cycle
     t_ref = pd.Timestamp("2026-05-12 00:10:00") 
     hours = (times - t_ref).total_seconds() / 3600.0
     m2 = 0.45 * np.cos(2 * np.pi * hours / 12.42)
@@ -60,7 +61,7 @@ def get_weather_data():
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    # Dynamic "Now" line for Wellington time
+    # Pinned to Wellington Time
     now = pd.Timestamp.now(tz='Pacific/Auckland').tz_localize(None)
     max_wind = df_hourly['speed'].max()
     all_time_min, all_time_max = df_hourly['time'].min(), df_hourly['time'].max()
@@ -72,7 +73,7 @@ try:
             return s['sunrise'] <= t <= s['sunset']
         return False
 
-    # --- 1. RIBBON ---
+    # --- 1. TOP RIBBON ---
     fig_ribbon = go.Figure()
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -90,29 +91,20 @@ try:
     fig_ribbon.update_layout(height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0, xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], ticktext=[f"<b>{pd.to_datetime(d).strftime('%a')}</b>" for d in df_sun['date']], side="top", tickfont=dict(size=9, color="white")), yaxis=dict(visible=False, fixedrange=True))
     st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
 
-    # --- 2. MAIN ---
+    # --- 2. MAIN CHARTS ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # NEW: CONSOLIDATED NIGHT ENGINE
-    # Scans the entire chart range to find and merge night blocks
-    night_shapes = []
-    is_night = False
-    start_time = None
+    # ADDING NIGHT BOXES: Using add_vrect to prevent layout overwrites
+    for _, row in df_sun.iterrows():
+        d_start = pd.Timestamp(row['date'])
+        d_end = d_start + pd.Timedelta(days=1)
+        
+        # Morning shade
+        fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="black", opacity=0.4, layer="below", line_width=0, row="all", col=1)
+        # Evening shade
+        fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="black", opacity=0.4, layer="below", line_width=0, row="all", col=1)
 
-    scan_range = pd.date_range(start=all_time_min, end=all_time_max, freq='15min')
-    for t in scan_range:
-        current_is_day = check_daylight(t, df_sun)
-        if not current_is_day and not is_night: # Start of night
-            is_night = True
-            start_time = t
-        elif current_is_day and is_night: # End of night
-            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=start_time, x1=t, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
-            is_night = False
-    
-    if is_night: # Catch the final night block if it goes to the end of chart
-        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=start_time, x1=all_time_max, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
-
-    # Wind Trace
+    # Wind Traces
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         midpoint = p1['time'] + (p2['time']-p1['time'])/2
@@ -122,7 +114,7 @@ try:
     # Tide Trace
     fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.7)", width=1.3), fill='tozeroy', fillcolor="rgba(255,255,255,0.15)", mode='lines', showlegend=False), row=2, col=1)
 
-    # Labels
+    # Labels and Annotations
     for _, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{pd.to_datetime(day['date']).strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.7)"), row=1, col=1)
@@ -136,9 +128,11 @@ try:
             t = df_tide.iloc[i]
             fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8, color="white"), yshift=10 if c > p else -10, row=2, col=1)
 
-    fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
+    # ADD "NOW" LINE LAST (Ensures it stays on top of shading)
+    fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.9)
+
     fig_main.update_layout(
-        shapes=night_shapes, height=230, margin=dict(l=10, r=10, t=5, b=5),
+        height=230, margin=dict(l=10, r=10, t=5, b=5),
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, range=[all_time_min, all_time_max]),
         xaxis2=dict(visible=False, range=[all_time_min, all_time_max]),
