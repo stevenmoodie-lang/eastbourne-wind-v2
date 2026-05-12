@@ -35,6 +35,7 @@ st.markdown("""
             margin-bottom: 0.2rem;
             text-align: left;
             padding-left: 5px;
+            text-transform: uppercase;
         }
     </style>
     <div class="custom-title">Eastbourne Wind</div>
@@ -116,10 +117,8 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
     # --- 2. COMPACT WIND DASHBOARD ---
     fig_main = go.Figure()
 
-    # WIND PLOT (Processing segments for day/night alpha)
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
-        # Match sunrise/sunset for the specific date of point 1
         day_info_match = df_sun[df_sun['date'] == p1['time'].date()]
         if day_info_match.empty: continue
         day_info = day_info_match.iloc[0]
@@ -132,7 +131,6 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
             t_start, t_end = current_times[j], current_times[j+1]
             if t_end < crop_start or t_start > crop_end: continue
             
-            # Interpolate speed for the transition point
             duration = (p2['time'] - p1['time']).total_seconds()
             frac = (t_start - p1['time']).total_seconds() / duration if duration > 0 else 0
             interp_speed = p1['speed'] + frac * (p2['speed'] - p1['speed'])
@@ -147,7 +145,6 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
                 mode='lines', showlegend=False, hoverinfo='skip'
             ))
 
-    # Annotations & V-Rects
     for _, day_sun in df_sun.iterrows():
         midpoint = day_sun['sunrise'] + (day_sun['sunset'] - day_sun['sunrise']) / 2
         fig_main.add_annotation(x=midpoint, y=max_wind + 6, text=f"<b>{day_sun['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.6)"))
@@ -179,8 +176,11 @@ try:
     now_nz = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
 
     # BLOCK 1: DAYS 1-7
-    st.markdown('<div class="section-label">DAYS 1 - 7</div>', unsafe_allow_html=True)
     sun_1 = df_sun_all.iloc[:7]
+    # Format dates for label
+    label_1 = f"{sun_1.iloc[0]['date'].strftime('%b %d')} - {sun_1.iloc[-1]['date'].strftime('%d')}" if sun_1.iloc[0]['date'].month == sun_1.iloc[-1]['date'].month else f"{sun_1.iloc[0]['date'].strftime('%b %d')} - {sun_1.iloc[-1]['date'].strftime('%b %d')}"
+    
+    st.markdown(f'<div class="section-label">{label_1}</div>', unsafe_allow_html=True)
     mask_1 = (df_hourly_all['time'] >= pd.Timestamp(sun_1.iloc[0]['date'])) & \
              (df_hourly_all['time'] < pd.Timestamp(sun_1.iloc[-1]['date']) + pd.Timedelta(days=1))
     render_forecast_block(df_hourly_all[mask_1], sun_1, show_now_line=True, now_ts=now_nz)
@@ -189,8 +189,11 @@ try:
     st.markdown("<hr style='border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 1rem 0;'>", unsafe_allow_html=True)
 
     # BLOCK 2: DAYS 8-14
-    st.markdown('<div class="section-label">DAYS 8 - 14</div>', unsafe_allow_html=True)
     sun_2 = df_sun_all.iloc[7:14]
+    # Format dates for label
+    label_2 = f"{sun_2.iloc[0]['date'].strftime('%b %d')} - {sun_2.iloc[-1]['date'].strftime('%d')}" if sun_2.iloc[0]['date'].month == sun_2.iloc[-1]['date'].month else f"{sun_2.iloc[0]['date'].strftime('%b %d')} - {sun_2.iloc[-1]['date'].strftime('%b %d')}"
+
+    st.markdown(f'<div class="section-label">{label_2}</div>', unsafe_allow_html=True)
     mask_2 = (df_hourly_all['time'] >= pd.Timestamp(sun_2.iloc[0]['date'])) & \
              (df_hourly_all['time'] < pd.Timestamp(sun_2.iloc[-1]['date']) + pd.Timedelta(days=1))
     render_forecast_block(df_hourly_all[mask_2], sun_2, show_now_line=False)
