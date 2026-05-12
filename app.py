@@ -145,6 +145,7 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
                 mode='lines', showlegend=False, hoverinfo='skip'
             ))
 
+    # Daytime labels and arrows
     for _, day_sun in df_sun.iterrows():
         midpoint = day_sun['sunrise'] + (day_sun['sunset'] - day_sun['sunrise']) / 2
         fig_main.add_annotation(x=midpoint, y=max_wind + 6, text=f"<b>{day_sun['date'].strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.6)"))
@@ -157,8 +158,21 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
                 fig_main.add_annotation(x=func['time'], y=func['speed'] + (offset/2.5), text="➤", textangle=heading-90, showarrow=False, font=dict(size=6, color="white"))
                 fig_main.add_annotation(x=func['time'], y=func['speed'] + offset, text=f"<b>{round(func['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"))
 
+    # Night periods and subtle moon icon
     for i in range(len(df_sun)-1):
-        fig_main.add_vrect(x0=df_sun.iloc[i]['sunset'], x1=df_sun.iloc[i+1]['sunrise'], fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
+        ss = df_sun.iloc[i]['sunset']
+        sr_next = df_sun.iloc[i+1]['sunrise']
+        
+        # Shade the area
+        fig_main.add_vrect(x0=ss, x1=sr_next, fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
+        
+        # Add a subtle moon icon centered in the night period
+        night_midpoint = ss + (sr_next - ss) / 2
+        fig_main.add_annotation(
+            x=night_midpoint, y=-2, 
+            text="☾", showarrow=False, 
+            font=dict(size=10, color="rgba(255,255,255,0.15)")
+        )
     
     if show_now_line and now_ts:
         fig_main.add_vline(x=now_ts, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
@@ -177,7 +191,6 @@ try:
 
     # BLOCK 1: DAYS 1-7
     sun_1 = df_sun_all.iloc[:7]
-    # Format dates for label
     label_1 = f"{sun_1.iloc[0]['date'].strftime('%b %d')} - {sun_1.iloc[-1]['date'].strftime('%d')}" if sun_1.iloc[0]['date'].month == sun_1.iloc[-1]['date'].month else f"{sun_1.iloc[0]['date'].strftime('%b %d')} - {sun_1.iloc[-1]['date'].strftime('%b %d')}"
     
     st.markdown(f'<div class="section-label">{label_1}</div>', unsafe_allow_html=True)
@@ -190,7 +203,6 @@ try:
 
     # BLOCK 2: DAYS 8-14
     sun_2 = df_sun_all.iloc[7:14]
-    # Format dates for label
     label_2 = f"{sun_2.iloc[0]['date'].strftime('%b %d')} - {sun_2.iloc[-1]['date'].strftime('%d')}" if sun_2.iloc[0]['date'].month == sun_2.iloc[-1]['date'].month else f"{sun_2.iloc[0]['date'].strftime('%b %d')} - {sun_2.iloc[-1]['date'].strftime('%b %d')}"
 
     st.markdown(f'<div class="section-label">{label_2}</div>', unsafe_allow_html=True)
