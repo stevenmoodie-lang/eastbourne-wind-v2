@@ -78,6 +78,7 @@ def get_weather_data():
 def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
     max_wind = df_hourly['speed'].max()
     crop_start, crop_end = df_sun['sunrise'].min(), df_sun['sunset'].max()
+    now_speed = None
 
     # --- 1. DYNAMIC ARROW RIBBON ---
     segments = []
@@ -135,6 +136,13 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
             frac = (t_start - p1['time']).total_seconds() / duration if duration > 0 else 0
             interp_speed = p1['speed'] + frac * (p2['speed'] - p1['speed'])
             
+            # Interpolate for the "Now" label
+            if show_now_line and t_start <= now_ts < t_end:
+                seg_duration = (t_end - t_start).total_seconds()
+                now_frac = (now_ts - t_start).total_seconds() / seg_duration if seg_duration > 0 else 0
+                speed_end_seg = interp_speed + (p2['speed']-p1['speed']) * (seg_duration / duration) if duration > 0 else interp_speed
+                now_speed = interp_speed + now_frac * (speed_end_seg - interp_speed)
+
             is_night = t_start < sr or t_start >= ss
             alpha = 0.12 if is_night else 1.0
             
@@ -144,6 +152,20 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
                 line=dict(color=get_color(interp_speed, alpha), width=2 if not is_night else 1),
                 mode='lines', showlegend=False, hoverinfo='skip'
             ))
+
+    # --- NOW LINE & LABEL ---
+    if show_now_line and now_ts:
+        fig_main.add_vline(x=now_ts, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
+        if now_speed is not None:
+            fig_main.add_annotation(
+                x=now_ts, y=now_speed,
+                text=f"<b>{int(round(now_speed))}</b>",
+                showarrow=False,
+                xanchor="left",
+                xshift=5,
+                font=dict(size=11, color=get_color(now_speed)),
+                bgcolor="rgba(61, 90, 115, 0.6)"
+            )
 
     # Daytime labels and arrows
     for _, day_sun in df_sun.iterrows():
@@ -162,21 +184,10 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
     for i in range(len(df_sun)-1):
         ss = df_sun.iloc[i]['sunset']
         sr_next = df_sun.iloc[i+1]['sunrise']
-        
-        # Shade the area
         fig_main.add_vrect(x0=ss, x1=sr_next, fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
-        
-        # Add moon icon (slightly brighter opacity and bigger size)
         night_midpoint = ss + (sr_next - ss) / 2
-        fig_main.add_annotation(
-            x=night_midpoint, y=-2.5, 
-            text="☾", showarrow=False, 
-            font=dict(size=12, color="rgba(255,255,255,0.35)")
-        )
+        fig_main.add_annotation(x=night_midpoint, y=-2.5, text="☾", showarrow=False, font=dict(size=12, color="rgba(255,255,255,0.35)"))
     
-    if show_now_line and now_ts:
-        fig_main.add_vline(x=now_ts, line_width=1, line_dash="dash", line_color="white", opacity=0.6)
-
     fig_main.update_layout(
         height=200, margin=dict(l=10, r=10, t=5, b=5), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         xaxis=dict(visible=False, fixedrange=False, range=[crop_start, crop_end]), 
@@ -187,13 +198,11 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
 # --- EXECUTION ---
 try:
     df_hourly_all, df_sun_all = get_weather_data()
-    # Fixed 12h offset for NZ Standard Time if needed, or use proper tz handling
     now_nz = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
 
     # BLOCK 1: 0-7 Days
     sun_1 = df_sun_all.iloc[:7]
     label_1 = f"{sun_1.iloc[0]['date'].strftime('%b %d')} - {sun_1.iloc[-1]['date'].strftime('%d')}" if sun_1.iloc[0]['date'].month == sun_1.iloc[-1]['date'].month else f"{sun_1.iloc[0]['date'].strftime('%b %d')} - {sun_1.iloc[-1]['date'].strftime('%b %d')}"
-    
     st.markdown(f'<div class="section-label">{label_1}</div>', unsafe_allow_html=True)
     mask_1 = (df_hourly_all['time'] >= pd.Timestamp(sun_1.iloc[0]['date'])) & \
              (df_hourly_all['time'] < pd.Timestamp(sun_1.iloc[-1]['date']) + pd.Timedelta(days=1))
@@ -205,7 +214,6 @@ try:
     # BLOCK 2: 7-14 Days
     sun_2 = df_sun_all.iloc[7:14]
     label_2 = f"{sun_2.iloc[0]['date'].strftime('%b %d')} - {sun_2.iloc[-1]['date'].strftime('%d')}" if sun_2.iloc[0]['date'].month == sun_2.iloc[-1]['date'].month else f"{sun_2.iloc[0]['date'].strftime('%b %d')} - {sun_2.iloc[-1]['date'].strftime('%b %d')}"
-
     st.markdown(f'<div class="section-label">{label_2}</div>', unsafe_allow_html=True)
     mask_2 = (df_hourly_all['time'] >= pd.Timestamp(sun_2.iloc[0]['date'])) & \
              (df_hourly_all['time'] < pd.Timestamp(sun_2.iloc[-1]['date']) + pd.Timedelta(days=1))
