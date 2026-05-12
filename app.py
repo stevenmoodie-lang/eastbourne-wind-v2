@@ -158,7 +158,7 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
                 fig_main.add_annotation(x=func['time'], y=func['speed'] + (offset/2.5), text="➤", textangle=heading-90, showarrow=False, font=dict(size=6, color="white"))
                 fig_main.add_annotation(x=func['time'], y=func['speed'] + offset, text=f"<b>{round(func['speed'])}</b>", showarrow=False, font=dict(size=8, color="white"))
 
-    # Night periods and subtle moon icon
+    # Night periods and moon icon
     for i in range(len(df_sun)-1):
         ss = df_sun.iloc[i]['sunset']
         sr_next = df_sun.iloc[i+1]['sunrise']
@@ -166,12 +166,12 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
         # Shade the area
         fig_main.add_vrect(x0=ss, x1=sr_next, fillcolor="rgba(0,0,0,0.2)", layer="below", line_width=0)
         
-        # Add a subtle moon icon centered in the night period
+        # Add moon icon (slightly brighter opacity and bigger size)
         night_midpoint = ss + (sr_next - ss) / 2
         fig_main.add_annotation(
-            x=night_midpoint, y=-2, 
+            x=night_midpoint, y=-2.5, 
             text="☾", showarrow=False, 
-            font=dict(size=10, color="rgba(255,255,255,0.15)")
+            font=dict(size=12, color="rgba(255,255,255,0.35)")
         )
     
     if show_now_line and now_ts:
@@ -187,9 +187,10 @@ def render_forecast_block(df_hourly, df_sun, show_now_line=False, now_ts=None):
 # --- EXECUTION ---
 try:
     df_hourly_all, df_sun_all = get_weather_data()
+    # Fixed 12h offset for NZ Standard Time if needed, or use proper tz handling
     now_nz = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=12))).replace(tzinfo=None)
 
-    # BLOCK 1: DAYS 1-7
+    # BLOCK 1: 0-7 Days
     sun_1 = df_sun_all.iloc[:7]
     label_1 = f"{sun_1.iloc[0]['date'].strftime('%b %d')} - {sun_1.iloc[-1]['date'].strftime('%d')}" if sun_1.iloc[0]['date'].month == sun_1.iloc[-1]['date'].month else f"{sun_1.iloc[0]['date'].strftime('%b %d')} - {sun_1.iloc[-1]['date'].strftime('%b %d')}"
     
@@ -201,7 +202,7 @@ try:
     # Visual Separator
     st.markdown("<hr style='border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 1rem 0;'>", unsafe_allow_html=True)
 
-    # BLOCK 2: DAYS 8-14
+    # BLOCK 2: 7-14 Days
     sun_2 = df_sun_all.iloc[7:14]
     label_2 = f"{sun_2.iloc[0]['date'].strftime('%b %d')} - {sun_2.iloc[-1]['date'].strftime('%d')}" if sun_2.iloc[0]['date'].month == sun_2.iloc[-1]['date'].month else f"{sun_2.iloc[0]['date'].strftime('%b %d')} - {sun_2.iloc[-1]['date'].strftime('%b %d')}"
 
