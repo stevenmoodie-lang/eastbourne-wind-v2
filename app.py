@@ -91,32 +91,32 @@ try:
     # --- 2. MAIN CHARTS ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # ADDING NIGHT SHADING FIRST (So it's at the bottom layer)
+    # NIGHT SHADING USING VRECTS (Resetting layers to absolute background)
     for _, row in df_sun.iterrows():
         d_start = pd.Timestamp(row['date'])
         d_end = d_start + pd.Timedelta(days=1)
         
-        # Morning Night
-        fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="black", opacity=0.25, layer="below", line_width=0, row="all", col=1)
-        # Evening Night
-        fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="black", opacity=0.25, layer="below", line_width=0, row="all", col=1)
+        # Pre-sunrise
+        fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="#000000", opacity=0.15, layer="below", line_width=0, row="all", col=1)
+        # Post-sunset
+        fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="#000000", opacity=0.15, layer="below", line_width=0, row="all", col=1)
 
     # Wind Traces
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         midpoint = p1['time'] + (p2['time']-p1['time'])/2
         alpha = 1.0 if check_daylight(midpoint, df_sun) else 0.4
-        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=2), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
+        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=1.8), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
 
     # Tide Trace
-    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.6)", width=1.3), fill='tozeroy', fillcolor="rgba(255,255,255,0.1)", mode='lines', showlegend=False), row=2, col=1)
+    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.5)", width=1.3), fill='tozeroy', fillcolor="rgba(255,255,255,0.08)", mode='lines', showlegend=False), row=2, col=1)
 
-    # Label Annotations
+    # Labels
     for _, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{pd.to_datetime(day['date']).strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.7)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunrise'], y=-4.5, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.5)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunset'], y=-4.5, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.5)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunrise'], y=-4.5, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.4)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunset'], y=-4.5, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.4)"), row=1, col=1)
 
     # Tide Peaks
     for i in range(1, len(df_tide)-1):
@@ -125,8 +125,9 @@ try:
             t = df_tide.iloc[i]
             fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8, color="white"), yshift=10 if c > p else -10, row=2, col=1)
 
-    # Vertical "Now" Line (Dashed)
-    fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
+    # NOW LINE (Crucial: Added at the very end with a specific trace type to force visibility)
+    fig_main.add_trace(go.Scatter(x=[now, now], y=[-10, 100], line=dict(color="white", width=1.5, dash="dash"), mode="lines", showlegend=False, hoverinfo="none"), row=1, col=1)
+    fig_main.add_trace(go.Scatter(x=[now, now], y=[0, 3], line=dict(color="white", width=1.5, dash="dash"), mode="lines", showlegend=False, hoverinfo="none"), row=2, col=1)
 
     fig_main.update_layout(
         height=230, margin=dict(l=10, r=10, t=5, b=5),
