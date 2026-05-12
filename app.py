@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
+import time
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Eastbourne Wind", layout="wide")
@@ -36,8 +37,8 @@ def get_color(knots, alpha=1.0):
     if knots <= 28: return f"rgba(255, 126, 121, {alpha})"
     return f"rgba(188, 108, 167, {alpha})"
 
-@st.cache_data(ttl=300) # Reduced TTL to force refresh
-def fetch_fresh_weather_data():
+@st.cache_data(ttl=60) # Super short TTL for testing
+def get_data_v5(): # New function name to kill old cache
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": -41.405, "longitude": 174.867, 
@@ -54,12 +55,12 @@ def fetch_fresh_weather_data():
     return df_h, df_s, df_tide
 
 try:
-    df_hourly, df_sun, df_tide = fetch_fresh_weather_data()
+    df_hourly, df_sun, df_tide = get_data_v5()
     now = pd.Timestamp.now(tz='Pacific/Auckland').tz_localize(None)
     max_wind = df_hourly['speed'].max()
     t_min, t_max = df_hourly['time'].min(), df_hourly['time'].max()
 
-    # --- TOP RIBBON ---
+    # --- 1. TOP RIBBON ---
     fig_ribbon = go.Figure()
     for _, day in df_sun.iterrows():
         sunrise, sunset = day['sunrise'], day['sunset']
@@ -71,46 +72,39 @@ try:
                 x_id = f"{day['date']}_{i}"
                 fig_ribbon.add_trace(go.Bar(x=[x_id], y=[1], marker=dict(color=get_color(d['speed'].mean()), line=dict(width=0)), showlegend=False))
                 fig_ribbon.add_annotation(x=x_id, y=0.5, text="➤", showarrow=False, textangle=((d['dir'].mean()+180)%360)-90, font=dict(size=7, color="white"))
-                fig_ribbon.add_annotation(x=x_id, y=-0.3, text=f"{round(d['speed'].mean())}", showarrow=False, font=dict(size=7, color="white"))
         fig_ribbon.add_trace(go.Bar(x=[f"{day['date']}_sp"], y=[1], marker=dict(color="rgba(0,0,0,0)"), showlegend=False))
 
-    fig_ribbon.update_layout(height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0, xaxis=dict(showgrid=False, tickmode='array', tickvals=[f"{d}_1" for d in df_sun['date']], ticktext=[f"{pd.to_datetime(d).strftime('%a')}" for d in df_sun['date']], side="top", tickfont=dict(size=9)), yaxis=dict(visible=False))
-    st.plotly_chart(fig_ribbon, use_container_width=True, config={'displayModeBar': False})
+    fig_ribbon.update_layout(height=85, margin=dict(l=5, r=5, t=25, b=10), template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', bargap=0, xaxis=dict(showgrid=False, side="top"))
+    st.plotly_chart(fig_ribbon, use_container_width=True, key=f"ribbon_{time.time()}")
 
-    # --- MAIN CHART ---
+    # --- 2. MAIN CHART ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # 1. NIGHT SHAPES (Construct list for update_layout)
-    night_shapes = []
+    # Night Shading (Opacity 0.08 - very light)
     for _, row in df_sun.iterrows():
         d_start, d_end = pd.Timestamp(row['date']), pd.Timestamp(row['date']) + pd.Timedelta(days=1)
-        # Morning/Evening blocks
-        for x0, x1 in [(d_start, row['sunrise']), (row['sunset'], d_end)]:
-            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=x0, x1=x1, y0=0, y1=1, fillcolor="black", opacity=0.1, layer="below", line_width=0))
+        fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="black", opacity=0.08, layer="below", line_width=0, row="all", col=1)
+        fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="black", opacity=0.08, layer="below", line_width=0, row="all", col=1)
 
-    # 2. WIND DATA
-    for i in range(len(df_hourly)-1):
-        p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
-        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed']), width=1.8), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
+    # Wind
+    fig_main.add_trace(go.Scatter(x=df_hourly['time'], y=df_hourly['speed'], line=dict(color="#5ca9cc", width=1.8), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
+    
+    # Tide
+    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.3)"), fill='tozeroy', mode='lines', showlegend=False), row=2, col=1)
 
-    # 3. TIDE DATA
-    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.4)", width=1.2), fill='tozeroy', fillcolor="rgba(255,255,255,0.05)", mode='lines', showlegend=False), row=2, col=1)
+    # Now Line
+    fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white")
 
-    # 4. NOW LINE
-    fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
-
-    # 5. LABELS & LAYOUT
     fig_main.update_layout(
         height=230, margin=dict(l=10, r=10, t=5, b=5),
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        shapes=night_shapes,
         xaxis=dict(visible=False, range=[t_min, t_max]),
         xaxis2=dict(visible=False, range=[t_min, t_max]),
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.03)', zeroline=False, showticklabels=False, range=[-5, max_wind + 10]),
+        yaxis=dict(showgrid=False, showticklabels=False, range=[-2, max_wind + 5]),
         yaxis2=dict(visible=False, range=[0, 2.5])
     )
     
-    st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig_main, use_container_width=True, key=f"main_{time.time()}")
 
 except Exception as e:
-    st.error(f"Render Error: {e}")
+    st.error(f"Error: {e}")
