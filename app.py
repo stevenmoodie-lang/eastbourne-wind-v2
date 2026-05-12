@@ -60,8 +60,8 @@ def get_weather_data():
 
 try:
     df_hourly, df_sun, df_tide = get_weather_data()
-    # Ensure "Now" is in NZST (UTC+12)
-    now = (datetime.datetime.utcnow() + datetime.timedelta(hours=12)).replace(microsecond=0)
+    # Dynamic "Now" line for Wellington time
+    now = pd.Timestamp.now(tz='Pacific/Auckland').tz_localize(None)
     max_wind = df_hourly['speed'].max()
     all_time_min, all_time_max = df_hourly['time'].min(), df_hourly['time'].max()
 
@@ -93,36 +93,43 @@ try:
     # --- 2. MAIN ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # FORCED NIGHT SHADING: Draw blocks for every day independently
+    # NEW: CONSOLIDATED NIGHT ENGINE
+    # Scans the entire chart range to find and merge night blocks
     night_shapes = []
-    for _, row in df_sun.iterrows():
-        day_start = pd.Timestamp(row['date'])
-        day_end = day_start + pd.Timedelta(days=1)
-        
-        # Block 1: Midnight to Sunrise
-        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=day_start, x1=row['sunrise'], y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
-        
-        # Block 2: Sunset to next Midnight
-        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=row['sunset'], x1=day_end, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
+    is_night = False
+    start_time = None
 
-    # Wind Lines
+    scan_range = pd.date_range(start=all_time_min, end=all_time_max, freq='15min')
+    for t in scan_range:
+        current_is_day = check_daylight(t, df_sun)
+        if not current_is_day and not is_night: # Start of night
+            is_night = True
+            start_time = t
+        elif current_is_day and is_night: # End of night
+            night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=start_time, x1=t, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
+            is_night = False
+    
+    if is_night: # Catch the final night block if it goes to the end of chart
+        night_shapes.append(dict(type="rect", xref="x", yref="paper", x0=start_time, x1=all_time_max, y0=0, y1=1, fillcolor="rgba(0, 0, 0, 0.45)", layer="below", line_width=0))
+
+    # Wind Trace
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         midpoint = p1['time'] + (p2['time']-p1['time'])/2
-        alpha = 1.0 if check_daylight(midpoint, df_sun) else 0.25
+        alpha = 1.0 if check_daylight(midpoint, df_sun) else 0.3
         fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=1.8), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
 
     # Tide Trace
     fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.7)", width=1.3), fill='tozeroy', fillcolor="rgba(255,255,255,0.15)", mode='lines', showlegend=False), row=2, col=1)
 
-    # UI Labels
+    # Labels
     for _, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{pd.to_datetime(day['date']).strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.7)"), row=1, col=1)
         fig_main.add_annotation(x=day['sunrise'], y=-4.5, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
         fig_main.add_annotation(x=day['sunset'], y=-4.5, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
 
-    # Tide Peak Times (High-visibility white)
+    # High-vis Tide Peaks
     for i in range(1, len(df_tide)-1):
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
