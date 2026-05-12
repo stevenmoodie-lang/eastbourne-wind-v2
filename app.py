@@ -21,7 +21,7 @@ st.markdown("""
     <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
 
-# --- TIDE MODEL ---
+# --- TIDE MODEL (Wellington Harbor) ---
 def calculate_wellington_tide(times):
     t_ref = pd.Timestamp("2026-05-12 00:10:00") 
     hours = (times - t_ref).total_seconds() / 3600.0
@@ -37,8 +37,8 @@ def get_color(knots, alpha=1.0):
     if knots <= 28: return f"rgba(255, 126, 121, {alpha})"
     return f"rgba(188, 108, 167, {alpha})"
 
-@st.cache_data(ttl=60) # Super short TTL for testing
-def get_data_v5(): # New function name to kill old cache
+@st.cache_data(ttl=60)
+def get_data_v6(): 
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": -41.405, "longitude": 174.867, 
@@ -47,15 +47,31 @@ def get_data_v5(): # New function name to kill old cache
         "timezone": "Pacific/Auckland", "wind_speed_unit": "kn", "forecast_days": 7
     }
     r = requests.get(url, params=params).json()
+    
     def to_nz(raw): return pd.to_datetime(raw).tz_localize(None)
-    df_h = pd.DataFrame({"time": to_nz(r["hourly"]["time"]), "speed": r["hourly"]["wind_speed_10m"], "dir": r["hourly"]["wind_direction_10m"]})
-    df_s = pd.DataFrame({"date": pd.to_datetime(r["daily"]["time"]).dt.date, "sunrise": to_nz(r["daily"]["sunrise"]), "sunset": to_nz(r["daily"]["sunset"])})
+    
+    df_h = pd.DataFrame({
+        "time": to_nz(r["hourly"]["time"]), 
+        "speed": r["hourly"]["wind_speed_10m"], 
+        "dir": r["hourly"]["wind_direction_10m"]
+    })
+    
+    # Fixed the .dt error here by ensuring we handle the series correctly
+    df_s = pd.DataFrame({
+        "date": pd.to_datetime(r["daily"]["time"]).date, # Accessing .date directly
+        "sunrise": to_nz(r["daily"]["sunrise"]), 
+        "sunset": to_nz(r["daily"]["sunset"])
+    })
+    
     t_range = pd.date_range(start=df_h['time'].min(), end=df_h['time'].max(), freq='15min')
-    df_tide = pd.DataFrame({"time": t_range, "height": [calculate_wellington_tide(t) for t in t_range]})
+    df_tide = pd.DataFrame({
+        "time": t_range, 
+        "height": [calculate_wellington_tide(t) for t in t_range]
+    })
     return df_h, df_s, df_tide
 
 try:
-    df_hourly, df_sun, df_tide = get_data_v5()
+    df_hourly, df_sun, df_tide = get_data_v6()
     now = pd.Timestamp.now(tz='Pacific/Auckland').tz_localize(None)
     max_wind = df_hourly['speed'].max()
     t_min, t_max = df_hourly['time'].min(), df_hourly['time'].max()
@@ -80,17 +96,18 @@ try:
     # --- 2. MAIN CHART ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # Night Shading (Opacity 0.08 - very light)
+    # Night Shading (Opacity 0.05 - very subtle)
     for _, row in df_sun.iterrows():
-        d_start, d_end = pd.Timestamp(row['date']), pd.Timestamp(row['date']) + pd.Timedelta(days=1)
-        fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="black", opacity=0.08, layer="below", line_width=0, row="all", col=1)
-        fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="black", opacity=0.08, layer="below", line_width=0, row="all", col=1)
+        d_start = pd.Timestamp(row['date'])
+        d_end = d_start + pd.Timedelta(days=1)
+        fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="black", opacity=0.05, layer="below", line_width=0, row="all", col=1)
+        fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="black", opacity=0.05, layer="below", line_width=0, row="all", col=1)
 
     # Wind
-    fig_main.add_trace(go.Scatter(x=df_hourly['time'], y=df_hourly['speed'], line=dict(color="#5ca9cc", width=1.8), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
+    fig_main.add_trace(go.Scatter(x=df_hourly['time'], y=df_hourly['speed'], line=dict(color="#5ca9cc", width=1.8), mode='lines', showlegend=False), row=1, col=1)
     
     # Tide
-    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.3)"), fill='tozeroy', mode='lines', showlegend=False), row=2, col=1)
+    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.2)"), fill='tozeroy', mode='lines', showlegend=False), row=2, col=1)
 
     # Now Line
     fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white")
