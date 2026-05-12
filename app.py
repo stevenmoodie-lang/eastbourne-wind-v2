@@ -21,7 +21,7 @@ st.markdown("""
     <div class="custom-title">Eastbourne Wind</div>
 """, unsafe_allow_html=True)
 
-# --- TIDE MODEL (Wellington Harbor) ---
+# --- TIDE MODEL ---
 def calculate_wellington_tide(times):
     t_ref = pd.Timestamp("2026-05-12 00:10:00") 
     hours = (times - t_ref).total_seconds() / 3600.0
@@ -38,7 +38,7 @@ def get_color(knots, alpha=1.0):
     return f"rgba(188, 108, 167, {alpha})"
 
 @st.cache_data(ttl=60)
-def get_data_v6(): 
+def get_data_v7(): 
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": -41.405, "longitude": 174.867, 
@@ -56,9 +56,10 @@ def get_data_v6():
         "dir": r["hourly"]["wind_direction_10m"]
     })
     
-    # Fixed the .dt error here by ensuring we handle the series correctly
+    # Robust conversion to date objects
+    dates_series = pd.to_datetime(r["daily"]["time"])
     df_s = pd.DataFrame({
-        "date": pd.to_datetime(r["daily"]["time"]).date, # Accessing .date directly
+        "date": dates_series.to_series().dt.date.values,
         "sunrise": to_nz(r["daily"]["sunrise"]), 
         "sunset": to_nz(r["daily"]["sunset"])
     })
@@ -71,7 +72,7 @@ def get_data_v6():
     return df_h, df_s, df_tide
 
 try:
-    df_hourly, df_sun, df_tide = get_data_v6()
+    df_hourly, df_sun, df_tide = get_data_v7()
     now = pd.Timestamp.now(tz='Pacific/Auckland').tz_localize(None)
     max_wind = df_hourly['speed'].max()
     t_min, t_max = df_hourly['time'].min(), df_hourly['time'].max()
@@ -96,10 +97,9 @@ try:
     # --- 2. MAIN CHART ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # Night Shading (Opacity 0.05 - very subtle)
+    # Night Shading (Low contrast 0.05)
     for _, row in df_sun.iterrows():
-        d_start = pd.Timestamp(row['date'])
-        d_end = d_start + pd.Timedelta(days=1)
+        d_start, d_end = pd.Timestamp(row['date']), pd.Timestamp(row['date']) + pd.Timedelta(days=1)
         fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="black", opacity=0.05, layer="below", line_width=0, row="all", col=1)
         fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="black", opacity=0.05, layer="below", line_width=0, row="all", col=1)
 
