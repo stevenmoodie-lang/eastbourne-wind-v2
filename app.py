@@ -3,7 +3,6 @@ import requests
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import datetime
 import numpy as np
 
 # --- PAGE CONFIG ---
@@ -92,49 +91,42 @@ try:
     # --- 2. MAIN CHARTS ---
     fig_main = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.6, 0.4])
 
-    # SOLUTION: Use a Scatter-Fill trace for Night Shading (More reliable than VRECT)
+    # ADDING NIGHT SHADING FIRST (So it's at the bottom layer)
     for _, row in df_sun.iterrows():
-        # Night blocks (Midnight to Sunrise and Sunset to Midnight)
-        for t0, t1 in [(pd.Timestamp(row['date']), row['sunrise']), (row['sunset'], pd.Timestamp(row['date']) + pd.Timedelta(days=1))]:
-            # Add to Top Plot (Wind)
-            fig_main.add_trace(go.Scatter(
-                x=[t0, t1, t1, t0], y=[-10, -10, 100, 100], 
-                fill="toself", fillcolor="rgba(0,0,0,0.5)", 
-                line=dict(width=0), hoverinfo="none", showlegend=False
-            ), row=1, col=1)
-            # Add to Bottom Plot (Tide)
-            fig_main.add_trace(go.Scatter(
-                x=[t0, t1, t1, t0], y=[0, 0, 3, 3], 
-                fill="toself", fillcolor="rgba(0,0,0,0.5)", 
-                line=dict(width=0), hoverinfo="none", showlegend=False
-            ), row=2, col=1)
+        d_start = pd.Timestamp(row['date'])
+        d_end = d_start + pd.Timedelta(days=1)
+        
+        # Morning Night
+        fig_main.add_vrect(x0=d_start, x1=row['sunrise'], fillcolor="black", opacity=0.25, layer="below", line_width=0, row="all", col=1)
+        # Evening Night
+        fig_main.add_vrect(x0=row['sunset'], x1=d_end, fillcolor="black", opacity=0.25, layer="below", line_width=0, row="all", col=1)
 
-    # Wind Traces (Segmented for night-time alpha)
+    # Wind Traces
     for i in range(len(df_hourly)-1):
         p1, p2 = df_hourly.iloc[i], df_hourly.iloc[i+1]
         midpoint = p1['time'] + (p2['time']-p1['time'])/2
-        alpha = 1.0 if check_daylight(midpoint, df_sun) else 0.3
-        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=1.8), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
+        alpha = 1.0 if check_daylight(midpoint, df_sun) else 0.4
+        fig_main.add_trace(go.Scatter(x=[p1['time'], p2['time']], y=[p1['speed'], p2['speed']], line=dict(color=get_color(p1['speed'], alpha), width=2), mode='lines', hoverinfo='none', showlegend=False), row=1, col=1)
 
     # Tide Trace
-    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.7)", width=1.3), fill='tozeroy', fillcolor="rgba(255,255,255,0.15)", mode='lines', showlegend=False), row=2, col=1)
+    fig_main.add_trace(go.Scatter(x=df_tide['time'], y=df_tide['height'], line=dict(color="rgba(255,255,255,0.6)", width=1.3), fill='tozeroy', fillcolor="rgba(255,255,255,0.1)", mode='lines', showlegend=False), row=2, col=1)
 
-    # Day/Sunrise/Sunset Labels
+    # Label Annotations
     for _, day in df_sun.iterrows():
         midday = day['sunrise'] + (day['sunset'] - day['sunrise']) / 2
         fig_main.add_annotation(x=midday, y=max_wind + 5, text=f"<b>{pd.to_datetime(day['date']).strftime('%a')}</b>", showarrow=False, font=dict(size=9, color="rgba(255,255,255,0.7)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunrise'], y=-4.5, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
-        fig_main.add_annotation(x=day['sunset'], y=-4.5, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.6)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunrise'], y=-4.5, text=f"☼ {day['sunrise'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.5)"), row=1, col=1)
+        fig_main.add_annotation(x=day['sunset'], y=-4.5, text=f"☾ {day['sunset'].strftime('%H:%M')}", showarrow=False, font=dict(size=7.5, color="rgba(255,255,255,0.5)"), row=1, col=1)
 
-    # High-vis Tide Peaks
+    # Tide Peaks
     for i in range(1, len(df_tide)-1):
         p, c, n = df_tide.iloc[i-1]['height'], df_tide.iloc[i]['height'], df_tide.iloc[i+1]['height']
         if (c > p and c > n) or (c < p and c < n):
             t = df_tide.iloc[i]
             fig_main.add_annotation(x=t['time'], y=t['height'], text=t['time'].strftime('%H:%M'), showarrow=False, font=dict(size=8, color="white"), yshift=10 if c > p else -10, row=2, col=1)
 
-    # Vertical "Now" Line
-    fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.9)
+    # Vertical "Now" Line (Dashed)
+    fig_main.add_vline(x=now, line_width=1.5, line_dash="dash", line_color="white", opacity=0.8)
 
     fig_main.update_layout(
         height=230, margin=dict(l=10, r=10, t=5, b=5),
