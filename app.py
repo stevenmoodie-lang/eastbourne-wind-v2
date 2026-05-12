@@ -35,12 +35,13 @@ st.markdown("""
 LAT, LON = -41.405, 174.867
 
 def get_color(knots, alpha=1.0):
-    if knots <= 6: return f"rgba(169, 201, 217, {alpha})"    
-    if knots <= 11: return f"rgba(92, 169, 204, {alpha})"    
-    if knots <= 15: return f"rgba(122, 214, 134, {alpha})"   
-    if knots <= 19: return f"rgba(255, 230, 109, {alpha})"   
-    if knots <= 28: return f"rgba(255, 126, 121, {alpha})"   
-    return f"rgba(188, 108, 167, {alpha})"                    
+    if knots <= 5: return f"rgba(169, 201, 217, {alpha})"     # 0-5: Light Blue
+    if knots <= 10: return f"rgba(92, 169, 204, {alpha})"    # 6-10: Blue
+    if knots <= 15: return f"rgba(122, 214, 134, {alpha})"   # 11-15: Green
+    if knots <= 20: return f"rgba(255, 230, 109, {alpha})"   # 16-20: Yellow
+    if knots <= 25: return f"rgba(255, 126, 121, {alpha})"   # 21-25: Orange
+    if knots <= 30: return f"rgba(224, 49, 49, {alpha})"     # 26-30: Red
+    return f"rgba(153, 5, 5, {alpha})"                       # 31+: Dark Red
 
 @st.cache_data(ttl=600)
 def get_weather_data():
